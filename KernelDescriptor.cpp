@@ -4,12 +4,14 @@
 #include <iomanip>
 
 using namespace llvm;
-using namespace llvm::amdhsa;
+using namespace amdhsa;
 using namespace Dyninst::SymtabAPI;
 
 void KernelDescriptor::readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
                                 size_t fromIndex, size_t numBytes,
                                 uint8_t *data) {
+  assert(rawBytes && "rawBytes must be non-null");
+  assert(data && "data must be non-null");
   assert(fromIndex + numBytes <= rawBytesLength);
 
   for (size_t i = 0; i < numBytes; ++i) {
