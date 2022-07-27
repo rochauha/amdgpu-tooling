@@ -19,18 +19,18 @@ load_cache(${Dyninst_DIR}
            Boost_DEFINES
            TBB_INCLUDE_DIRS)
 
-add_library(kd-tooling
+add_library(amdgpu-tooling
   KernelDescriptor.cpp
   KdUtils.cpp
 )
 
-target_include_directories(kd-tooling PRIVATE
+target_include_directories(amdgpu-tooling PRIVATE
   ${DYNINST_INCLUDE_DIR}
   ${DYNINST_Boost_INCLUDE_DIRS}
   ${DYNINST_TBB_INCLUDE_DIRS}
 )
 
-target_compile_definitions(kd-tooling PRIVATE ${DYNINST_Boost_DEFINITIONS})
+target_compile_definitions(amdgpu-tooling PRIVATE ${DYNINST_Boost_DEFINITIONS})
 
 
 add_executable(kd-tool
@@ -41,7 +41,7 @@ target_compile_definitions(kd-tool PRIVATE ${DYNINST_Boost_DEFINITIONS})
 
 target_link_directories(kd-tool PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
 target_link_libraries(kd-tool
-                      kd-tooling
+                      amdgpu-tooling
                       symtabAPI
                       ${DYNINST_Boost_LIBRARIES}
                       )

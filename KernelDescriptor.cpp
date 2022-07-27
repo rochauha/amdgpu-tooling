@@ -20,14 +20,24 @@ void KernelDescriptor::readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
   }
 }
 
-KernelDescriptor::KernelDescriptor(const Region *region) {
-  assert(region && "region must be non-null");
+KernelDescriptor::KernelDescriptor(const Symbol *symbol) {
+  assert(symbol && "symbol must be non-null");
+
+  name = symbol->getMangledName();
+
+  const Region *region = symbol->getRegion();
 
   const size_t kdSize = 64;
 
   assert(sizeof(kernel_descriptor_t) == kdSize);
   assert(region->getDiskSize() == kdSize);
   assert(region->getMemSize() == kdSize);
+
+  // TODO : need to look at e_flags to know the subtarget
+  // object = region->symtab()->getObject();
+  // Elf_X * elfHeader = object->getElfHandle();
+  // std::cout << "e_machine : " << elfHeader->e_machine() << '\n';
+  // std::cout << "e_flags : " << elfHdr->e_flags() << '\n';
 
   const uint8_t *kdBytes = (const uint8_t *)region->getPtrToRawData();
 
@@ -818,6 +828,7 @@ void KernelDescriptor::setKernelCodeProperty_UsesDynamicStack(bool value) {
 #undef CHECK_WIDTH
 
 void KernelDescriptor::dump(std::ostream &os) const {
+  os << name << '\n';
   os << std::hex;
   os << "GROUP_SEGMENT_FIXED_SIZE : "
      << "0x" << kdRepr.group_segment_fixed_size << '\n';
@@ -837,4 +848,202 @@ void KernelDescriptor::dump(std::ostream &os) const {
   os << std::dec;
 }
 
-void KernelDescriptor::dumpDetailed(std::ostream &os) const { os << "TODO\n"; }
+void KernelDescriptor::dumpDetailed(std::ostream &os) const {
+  const char *space = "    ";
+  const char *indent = "  ";
+
+  os << "----- detailed dump for " << name << "  begin ---- \n\n";
+
+  os << indent << "-- GROUP_SEGMENT_FIXED_SIZE : " << std::hex << "0x"
+     << kdRepr.group_segment_fixed_size << space << std::dec
+     << kdRepr.group_segment_fixed_size << '\n'
+     << '\n';
+
+  os << indent << "-- PRIVATE_SEGMENT_FIXED_SIZE : " << std::hex << "0x"
+     << kdRepr.private_segment_fixed_size << space << std::dec
+     << kdRepr.private_segment_fixed_size << '\n'
+     << '\n';
+
+  os << indent << "-- KERNARG_SIZE : " << std::hex << "0x"
+     << kdRepr.kernarg_size << space << std::dec << kdRepr.kernarg_size << '\n'
+     << '\n';
+
+  os << indent << "-- KERNEL_CODE_ENTRY_BYTE_OFFSET : " << std::hex << "0x"
+     << kdRepr.kernel_code_entry_byte_offset << space << std::dec
+     << kdRepr.kernel_code_entry_byte_offset << '\n'
+     << '\n';
+
+  dumpCOMPUTE_PGM_RSRC3(os);
+  os << '\n';
+
+  dumpCOMPUTE_PGM_RSRC1(os);
+  os << '\n';
+
+  dumpCOMPUTE_PGM_RSRC2(os);
+  os << '\n';
+
+  dumpKernelCodeProperties(os);
+  os << '\n';
+
+  os << "----- detailed dump for " << name << "  end ---- \n";
+}
+
+void KernelDescriptor::dumpCOMPUTE_PGM_RSRC3(std::ostream &os) const {
+  const char *indent = "    ";
+
+  os << "  -- COMPUTE_PGM_RSRC3 begin\n";
+
+  os << indent << getCOMPUTE_PGM_RSRC3() << '\n';
+
+  os << "  -- COMPUTE_PGM_RSRC3 end\n";
+}
+
+void KernelDescriptor::dumpCOMPUTE_PGM_RSRC1(std::ostream &os) const {
+  const char *indent = "    ";
+  os << "  -- COMPUTE_PGM_RSRC1 begin\n";
+
+  os << indent << "GRANULATED_WORKITEM_VGPR_COUNT : "
+     << getCOMPUTE_PGM_RSRC1_GranulatedWorkitemVgprCount() << '\n';
+
+  os << indent << "GRANULATED_WAVEFRONT_SGPR_COUNT : "
+     << getCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount() << '\n';
+
+  os << indent << "PRIORITY : " << getCOMPUTE_PGM_RSRC1_Priority() << '\n';
+
+  os << indent
+     << "FLOAT_ROUND_MODE_32 : " << getCOMPUTE_PGM_RSRC1_FloatRoundMode32()
+     << '\n';
+
+  os << indent
+     << "FLOAT_ROUND_MODE_16_64 : " << getCOMPUTE_PGM_RSRC1_FloatRoundMode1664()
+     << '\n';
+
+  os << indent
+     << "FLOAT_DENORM_MODE_32 : " << getCOMPUTE_PGM_RSRC1_FloatDenormMode32()
+     << '\n';
+
+  os << indent << "FLOAT_DENORM_MODE_16_64 : "
+     << getCOMPUTE_PGM_RSRC1_FloatDenormMode1664() << '\n';
+
+  os << indent << "PRIV : " << getCOMPUTE_PGM_RSRC1_Priv() << '\n';
+
+  os << indent
+     << "ENABLE_DX10_CLAMP : " << getCOMPUTE_PGM_RSRC1_EnableDx10Clamp()
+     << '\n';
+
+  os << indent << "ENABLE_IEEE_MODE : " << getCOMPUTE_PGM_RSRC1_EnableIeeeMode()
+     << '\n';
+
+  os << indent << "BULKY : " << getCOMPUTE_PGM_RSRC1_Bulky() << '\n';
+
+  os << indent << "CDBG_USER : " << getCOMPUTE_PGM_RSRC1_CdbgUser() << '\n';
+
+  os << indent << "FP16_OVFL : " << getCOMPUTE_PGM_RSRC1_Fp16Ovfl() << '\n';
+
+  os << indent << "WGP_MODE : " << getCOMPUTE_PGM_RSRC1_WgpMode() << '\n';
+
+  os << indent << "MEM_ORDERED : " << getCOMPUTE_PGM_RSRC1_MemOrdered() << '\n';
+
+  os << indent << "FWD_PROGRESS : " << getCOMPUTE_PGM_RSRC1_FwdProgress()
+     << '\n';
+
+  os << "  -- COMPUTE_PGM_RSRC1 end\n";
+}
+
+void KernelDescriptor::dumpCOMPUTE_PGM_RSRC2(std::ostream &os) const {
+  const char *indent = "    ";
+  os << "  -- COMPUTE_PGM_RSRC2 begin\n";
+
+  os << indent << "ENABLE_PRIVATE_SEGMENT : "
+     << getCOMPUTE_PGM_RSRC2_EnablePrivateSegment() << '\n';
+
+  os << indent << "USER_SGPR_COUNT : " << getCOMPUTE_PGM_RSRC2_UserSgprCount()
+     << '\n';
+
+  os << indent
+     << "ENABLE_TRAP_HANDLER : " << getCOMPUTE_PGM_RSRC2_EnableTrapHandler()
+     << '\n';
+
+  os << indent << "ENABLE_SGPR_WORKGROUP_ID_X : "
+     << getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdX() << '\n';
+
+  os << indent << "ENABLE_SGPR_WORKGROUP_ID_Y : "
+     << getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdY() << '\n';
+
+  os << indent << "ENABLE_SGPR_WORKGROUP_ID_Z : "
+     << getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdZ() << '\n';
+
+  os << indent << "ENABLE_SGPR_WORKGROUP_INFO : "
+     << getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupInfo() << '\n';
+
+  os << indent << "ENABLE_VGPR_WORKITEM_ID : "
+     << getCOMPUTE_PGM_RSRC2_EnableVgprWorkitemId() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_ADDRESS_WATCH : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionAddressWatch() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_MEMORY : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionMemory() << '\n';
+
+  os << indent
+     << "GRANULATED_LDS_SIZE : " << getCOMPUTE_PGM_RSRC2_GranulatedLdsSize()
+     << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_IEEE_754_FP_INVALID_OPERATION : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpInvalidOperation() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_FP_DENORMAL_SOURCE : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionFpDenormalSource() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_IEEE_754_FP_DIVISION_BY_ZERO : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpDivisionByZero() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_IEEE_754_FP_OVERFLOW : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpOverflow() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_IEEE_754_FP_UNDERFLOW : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpUnderflow() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_IEEE_754_FP_INEXACT : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpInexact() << '\n';
+
+  os << indent << "ENABLE_EXCEPTION_INT_DIVIDE_BY_ZERO : "
+     << getCOMPUTE_PGM_RSRC2_EnableExceptionIntDivideByZero() << '\n';
+
+  os << "  -- COMPUTE_PGM_RSRC2 end\n";
+}
+
+void KernelDescriptor::dumpKernelCodeProperties(std::ostream &os) const {
+  const char *indent = "    ";
+  os << "  -- Kernel code properties begin\n";
+
+  os << indent << "ENABLE_SGPR_PRIVATE_SEGMENT_BUFFER : "
+     << getKernelCodeProperty_EnableSgprPrivateSegmentBuffer() << '\n';
+
+  os << indent << "ENABLE_SGPR_DISPATCH_PTR : "
+     << getKernelCodeProperty_EnableSgprDispatchPtr() << '\n';
+
+  os << indent
+     << "ENABLE_SGPR_QUEUE_PTR : " << getKernelCodeProperty_EnableSgprQueuePtr()
+     << '\n';
+
+  os << indent << "ENABLE_SGPR_KERNARG_SEGMENT_PTR : "
+     << getKernelCodeProperty_EnableSgprKernargSegmentPtr() << '\n';
+
+  os << indent << "ENABLE_SGPR_DISPATCH_ID : "
+     << getKernelCodeProperty_EnableSgprDispatchId() << '\n';
+
+  os << indent << "ENABLE_SGPR_FLAT_SCRATCH_INIT : "
+     << getKernelCodeProperty_EnableSgprFlatScratchInit() << '\n';
+
+  os << indent << "ENABLE_PRIVATE_SEGMENT_SIZE : "
+     << getKernelCodeProperty_EnablePrivateSegmentSize() << '\n';
+
+  os << indent << "ENABLE_WAVEFRONT_SIZE_32 : "
+     << getKernelCodeProperty_EnableWavefrontSize32() << '\n';
+
+  os << indent << "USES_DYNAMIC_STACK : "
+     << "todo in llvm first" << '\n';
+
+  os << "  -- Kernel code properties end\n";
+}

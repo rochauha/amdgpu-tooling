@@ -25,8 +25,8 @@ int main(int argc, char **argv) {
 
   for (const Symbol *symbol : symbols) {
     if (isKernelDescriptor(symbol)) {
-      KernelDescriptor kd(symbol->getRegion());
-      kd.dump(std::cout);
+      KernelDescriptor kd(symbol);
+      kd.dumpDetailed(std::cout);
       std::cout << '\n' << *symbol << '\n' << '\n';
     }
   }

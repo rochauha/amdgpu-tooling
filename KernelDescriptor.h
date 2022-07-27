@@ -3,13 +3,13 @@
 
 #include "third-party/AMDHSAKernelDescriptor.h"
 
-#include "Region.h"
+#include "Symtab.h"
 
 #include <ostream>
 
 class KernelDescriptor {
 public:
-  KernelDescriptor(const Dyninst::SymtabAPI::Region *region);
+  KernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol);
 
   uint32_t getGroupSegmentFixedSize() const;
   void setGroupSegmentFixedSize(uint32_t value);
@@ -246,8 +246,16 @@ private:
   void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
                 size_t fromIndex, size_t numBytes, uint8_t *data);
 
+  void dumpCOMPUTE_PGM_RSRC3(std::ostream &os) const;
+  void dumpCOMPUTE_PGM_RSRC1(std::ostream &os) const;
+  void dumpCOMPUTE_PGM_RSRC2(std::ostream &os) const;
+  void dumpKernelCodeProperties(std::ostream &os) const;
+
+  std::string name;
   // canonical kernel descriptor struct
   llvm::amdhsa::kernel_descriptor_t kdRepr;
+
+  Dyninst::SymtabAPI::Object *object;
 };
 
 #endif
