@@ -9,18 +9,7 @@ bool endsWith(const std::string &suffix, const std::string &str) {
   if (suffix.length() > str.length())
     return false;
 
-  const char *suffixPtr = suffix.c_str() + suffix.length() - 1;
-  const char *strPtr = str.c_str() + str.length() - 1;
-
-  for (size_t i = 0; i < suffix.length(); ++i) {
-    if (*suffixPtr != *strPtr) {
-      return false;
-    }
-    --suffixPtr;
-    --strPtr;
-  }
-
-  return true;
+  return str.substr(str.length() - suffix.length()) == suffix;
 }
 
 bool isKernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol) {

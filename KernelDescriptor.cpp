@@ -1,11 +1,14 @@
 #include "KernelDescriptor.h"
 
+#include "Elf_X.h"
+
 #include <cassert>
 #include <iomanip>
 
 using namespace llvm;
 using namespace amdhsa;
-using namespace Dyninst::SymtabAPI;
+using namespace Dyninst;
+using namespace SymtabAPI;
 
 void KernelDescriptor::readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
                                 size_t fromIndex, size_t numBytes,
