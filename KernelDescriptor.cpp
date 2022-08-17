@@ -2,6 +2,8 @@
 
 #include "Elf_X.h"
 
+#include "third-party/AMDGPUFlags.h"
+
 #include <cassert>
 #include <iomanip>
 
@@ -23,24 +25,74 @@ void KernelDescriptor::readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
   }
 }
 
-KernelDescriptor::KernelDescriptor(const Symbol *symbol) {
+bool KernelDescriptor::isGfx6() const {
+  return (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX600 &&
+          amdgpuMach <= EF_AMDGPU_MACH_AMDGCN_GFX601) ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX602;
+}
+
+bool KernelDescriptor::isGfx7() const {
+  return (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX700 &&
+          amdgpuMach <= EF_AMDGPU_MACH_AMDGCN_GFX704) ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX705;
+}
+
+bool KernelDescriptor::isGfx8() const {
+  return (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX801 &&
+          amdgpuMach <= EF_AMDGPU_MACH_AMDGCN_GFX810) ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX805;
+}
+
+bool KernelDescriptor::isGfx9() const {
+  return isGfx90aOr940() || (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX900 &&
+                             amdgpuMach <= EF_AMDGPU_MACH_AMDGCN_GFX90C);
+}
+
+bool KernelDescriptor::isGfx90aOr940() const {
+  return amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX90A &&
+         amdgpuMach <= EF_AMDGPU_MACH_AMDGCN_GFX940;
+}
+
+bool KernelDescriptor::isGfx9Plus() const { return isGfx9() || isGfx10Plus(); }
+
+bool KernelDescriptor::isGfx10() const {
+  return (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX1010 &&
+          amdgpuMach <= EF_AMDGPU_MACH_AMDGCN_GFX1033) ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX1013 ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX1034 ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX1035 ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX1036;
+}
+
+bool KernelDescriptor::isGfx10Plus() const { return isGfx10() || isGfx11(); }
+
+bool KernelDescriptor::isGfx11() const {
+  return amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX1100 ||
+         amdgpuMach == EF_AMDGPU_MACH_AMDGCN_GFX1103 ||
+         (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX1101 &&
+          amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX1102);
+}
+
+KernelDescriptor::KernelDescriptor(const Symbol *symbol, const Elf_X *elfHeader)
+    : elfHdr(elfHeader) {
   assert(symbol && "symbol must be non-null");
+  assert(elfHeader && "elfHeader must be non-null");
+  assert(elfHeader->e_machine() == EM_AMDGPU && "must be dealing with AMDGPU");
 
   name = symbol->getMangledName();
-
   const Region *region = symbol->getRegion();
 
   const size_t kdSize = 64;
+
+  // std::cout << "disk size = " << region->getDiskSize() << '\n';
+  // std::cout << "mem size = " << region->getMemSize() << '\n';
 
   assert(sizeof(kernel_descriptor_t) == kdSize);
   assert(region->getDiskSize() == kdSize);
   assert(region->getMemSize() == kdSize);
 
-  // TODO : need to look at e_flags to know the subtarget
-  // object = region->symtab()->getObject();
-  // Elf_X * elfHeader = object->getElfHandle();
-  // std::cout << "e_machine : " << elfHeader->e_machine() << '\n';
-  // std::cout << "e_flags : " << elfHdr->e_flags() << '\n';
+  unsigned flags = elfHdr->e_flags();
+  amdgpuMach = flags & EF_AMDGPU_MACH; // llvm::EF_AMDGPU_MACH
 
   const uint8_t *kdBytes = (const uint8_t *)region->getPtrToRawData();
 
@@ -66,11 +118,6 @@ KernelDescriptor::KernelDescriptor(const Symbol *symbol) {
       break;
 
     case amdhsa::RESERVED0_OFFSET:
-      // 4 bytes from here are reserved, must be 0.
-      for (int i = 0; i < 4; ++i) {
-        int j = amdhsa::RESERVED0_OFFSET + i;
-        assert(kdBytes[j] == 0 && "reserved bytes (reserved1) must be 0");
-      }
       readToKd(kdBytes, kdSize, idx, 4 * sizeof(int8_t), kdPtr + idx);
       idx += 4 * sizeof(uint8_t);
       break;
@@ -81,18 +128,12 @@ KernelDescriptor::KernelDescriptor(const Symbol *symbol) {
       break;
 
     case amdhsa::RESERVED1_OFFSET:
-      // 20 bytes from here are reserved, must be 0.
-      for (int i = 0; i < 20; ++i) {
-        int j = amdhsa::RESERVED1_OFFSET + i;
-        assert(kdBytes[j] == 0 && "reserved bytes (reserved1) must be 0");
-      }
       readToKd(kdBytes, kdSize, idx, 20 * sizeof(uint8_t), kdPtr + idx);
       idx += 20 * sizeof(uint8_t);
       break;
 
     case amdhsa::COMPUTE_PGM_RSRC3_OFFSET:
-      //  - Only set for GFX10, GFX6-9 have this to be 0.
-      // TODO : see e_flags for subtarget
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
       idx += sizeof(uint32_t);
       break;
 
@@ -112,16 +153,46 @@ KernelDescriptor::KernelDescriptor(const Symbol *symbol) {
       break;
 
     case amdhsa::RESERVED2_OFFSET:
-      // 6 bytes from here are reserved, must be 0.
-      for (int i = 0; i < 6; ++i) {
-        int j = amdhsa::RESERVED2_OFFSET + i;
-        assert(kdBytes[j] == 0 && "reserved bytes (reserved2) must be 0");
-      }
       readToKd(kdBytes, kdSize, idx, 6 * sizeof(uint8_t), kdPtr + idx);
       idx += 6 * sizeof(uint8_t);
       break;
     }
   }
+
+  assert(verify() && "Kernel descriptor must be well formed");
+}
+
+bool KernelDescriptor::verify() const {
+  for (int idx = 0; idx < 4; ++idx) {
+    if (kdRepr.reserved0[idx] != 0)
+      return false;
+  }
+
+  for (int idx = 0; idx < 20; ++idx) {
+    if (kdRepr.reserved1[idx] != 0)
+      return false;
+  }
+
+  for (int idx = 0; idx < 6; ++idx) {
+    if (kdRepr.reserved2[idx] != 0)
+      return false;
+  }
+
+  if (verifyCOMPUTE_PGM_RSRC3() == false)
+    return false;
+
+  // FIXME: this returns false
+  // if (verifyCOMPUTE_PGM_RSRC1() == false)
+  // return false;
+
+  if (verifyCOMPUTE_PGM_RSRC2() == false)
+    return false;
+
+  // FIXME: this returns false
+  // if (verifyKernelCodeProperties() == false)
+  //   return false;
+
+  return true;
 }
 
 uint32_t KernelDescriptor::getGroupSegmentFixedSize() const {
@@ -158,26 +229,28 @@ void KernelDescriptor::setKernelCodeEntryByteOffset(int64_t value) {
 
 #define GET_VALUE(MASK) ((fourByteBuffer & MASK) >> (MASK##_SHIFT))
 #define SET_VALUE(MASK) (fourByteBuffer | ((value) << (MASK##_SHIFT)))
-#define CLEAR_BITS(MASK) ((fourByteBuffer & !MASK))
+#define CLEAR_BITS(MASK) (fourByteBuffer & (~(MASK)))
 #define CHECK_WIDTH(MASK) ((value) >> (MASK##_WIDTH) == 0)
+
+#define GET_ITH_BIT_AFTER(MASK, i)                                             \
+  ((fourByteBuffer & ((1 << (MASK##_WIDTH) + i - 1) << (MASK##_SHIFT))) == 0)
 
 // ----- COMPUTE_PGM_RSRC3 begin -----
 //
 //
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC3() const {
-  // TODO: THIS WHOLE REGISTER IS RESERVED FOR GFX6-9, MODIFY ALL THE CODE
-  // ACCORDINGLY
   return kdRepr.compute_pgm_rsrc3;
 }
 
 // GFX90A, GFX940 begin
-// TODO : ADD ASSERTS FOR GFX90A and GFX940
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC3_AccumOffset() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx90aOr940());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX90A_ACCUM_OFFSET);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_AccumOffset(uint32_t value) {
+  assert(isGfx90aOr940());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX90A_ACCUM_OFFSET);
   assert(CHECK_WIDTH(COMPUTE_PGM_RSRC3_GFX90A_ACCUM_OFFSET) &&
@@ -186,11 +259,13 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC3_AccumOffset(uint32_t value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC3_TgSplit() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx90aOr940());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX90A_TG_SPLIT);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_TgSplit(bool value) {
+  assert(isGfx90aOr940());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX90A_TG_SPLIT);
   kdRepr.compute_pgm_rsrc3 = SET_VALUE(COMPUTE_PGM_RSRC3_GFX90A_TG_SPLIT);
@@ -199,13 +274,14 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC3_TgSplit(bool value) {
 // GFX90A, GFX940 end
 
 // GFX10, GFX11 begin
-// TODO : ADD ASSERTS FOR GFX10 and GFX11
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC3_SharedVgprCount() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx10Plus());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_SHARED_VGPR_COUNT);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_SharedVgprCount(uint32_t value) {
+  assert(isGfx10Plus());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX10_PLUS_SHARED_VGPR_COUNT);
   assert(CHECK_WIDTH(COMPUTE_PGM_RSRC3_GFX10_PLUS_SHARED_VGPR_COUNT) &&
@@ -214,13 +290,14 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC3_SharedVgprCount(uint32_t value) {
       SET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_SHARED_VGPR_COUNT);
 }
 
-// TODO: ADD ASSERT FOR GFX11, THIS IS RESERVED IN GFX10
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC3_InstPrefSize() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx10Plus());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_INST_PREF_SIZE);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_InstPrefSize(uint32_t value) {
+  assert(isGfx11());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX10_PLUS_INST_PREF_SIZE);
   assert(CHECK_WIDTH(COMPUTE_PGM_RSRC3_GFX10_PLUS_INST_PREF_SIZE) &&
@@ -229,45 +306,101 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC3_InstPrefSize(uint32_t value) {
       SET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_INST_PREF_SIZE);
 }
 
-// TODO: ADD ASSERT FOR GFX11, THIS IS RESERVED IN GFX10
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC3_TrapOnStart() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx10Plus());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_START);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_TrapOnStart(bool value) {
+  assert(isGfx11());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_START);
   kdRepr.compute_pgm_rsrc3 =
       SET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_START);
 }
 
-// TODO: ADD ASSERT FOR GFX11, THIS IS RESERVED IN GFX10
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC3_TrapOnEnd() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx10Plus());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_END);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_TrapOnEnd(bool value) {
+  assert(isGfx11());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_END);
   kdRepr.compute_pgm_rsrc3 =
       SET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_END);
 }
 
-// TODO: ADD ASSERT FOR GFX11, THIS IS RESERVED IN GFX10
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC3_ImageOp() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  assert(isGfx10Plus());
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   return GET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_IMAGE_OP);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC3_ImageOp(bool value) {
+  assert(isGfx11());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC3_GFX10_PLUS_IMAGE_OP);
   kdRepr.compute_pgm_rsrc3 = SET_VALUE(COMPUTE_PGM_RSRC3_GFX10_PLUS_IMAGE_OP);
 }
 //
 // GFX10, GFX11 end
+
+bool KernelDescriptor::verifyCOMPUTE_PGM_RSRC3() const {
+  // reserved and 0 for GFX6-9
+  if (!isGfx90aOr940() && (!isGfx10Plus())) {
+    if (kdRepr.compute_pgm_rsrc3 != 0)
+      return false;
+  }
+
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc3;
+  if (isGfx90aOr940()) {
+    // next 10 bits after ACCUM_OFFSET are reserved and must be 0
+    for (int i = 1; i <= 10; ++i) {
+      bool bit = GET_ITH_BIT_AFTER(COMPUTE_PGM_RSRC3_GFX90A_ACCUM_OFFSET, i);
+      if (bit)
+        return false;
+    }
+
+    // next 15 bits after TG_SPLIT are reserved and must be 0
+    for (int i = 1; i <= 15; ++i) {
+      bool bit = GET_ITH_BIT_AFTER(COMPUTE_PGM_RSRC3_GFX90A_TG_SPLIT, i);
+      if (bit)
+        return false;
+    }
+  }
+
+  if (isGfx10Plus()) {
+    uint32_t instPrefSize = getCOMPUTE_PGM_RSRC3_InstPrefSize();
+    if (isGfx10() && instPrefSize != 0)
+      return false;
+
+    // These are reserved and 0 for GFX10 and must be 0 for GFX11 as CP fills in
+    // the value
+    if (getCOMPUTE_PGM_RSRC3_TrapOnStart() != 0)
+      return false;
+
+    if (getCOMPUTE_PGM_RSRC3_TrapOnEnd() != 0)
+      return false;
+
+    // next 19 bits are reserved and must be 0
+    for (int i = 1; i <= 19; ++i) {
+      bool bit = GET_ITH_BIT_AFTER(COMPUTE_PGM_RSRC3_GFX10_PLUS_TRAP_ON_END, i);
+      if (bit)
+        return false;
+    }
+
+    bool imageOp = getCOMPUTE_PGM_RSRC3_ImageOp();
+    if (isGfx10() && imageOp != 0)
+      return false;
+  }
+
+  return true;
+}
+//
 // ----- COMPUTE_PGM_RSRC3 end -----
 
 // ----- COMPUTE_PGM_RSRC1 begin -----
@@ -279,7 +412,7 @@ uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC1() const {
 
 uint32_t
 KernelDescriptor::getCOMPUTE_PGM_RSRC1_GranulatedWorkitemVgprCount() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_GRANULATED_WORKITEM_VGPR_COUNT);
 }
 
@@ -295,7 +428,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_GranulatedWorkitemVgprCount(
 
 uint32_t
 KernelDescriptor::getCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_GRANULATED_WAVEFRONT_SGPR_COUNT);
 }
 
@@ -311,12 +444,12 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount(
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC1_Priority() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_PRIORITY);
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC1_FloatRoundMode32() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_FLOAT_ROUND_MODE_32);
 }
 
@@ -329,7 +462,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_FloatRoundMode32(uint32_t value) {
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC1_FloatRoundMode1664() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_FLOAT_ROUND_MODE_16_64);
 }
 
@@ -343,7 +476,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_FloatRoundMode1664(uint32_t value) {
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC1_FloatDenormMode32() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_FLOAT_DENORM_MODE_32);
 }
 
@@ -356,7 +489,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_FloatDenormMode32(uint32_t value) {
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC1_FloatDenormMode1664() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_FLOAT_DENORM_MODE_16_64);
 }
 
@@ -371,12 +504,12 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_FloatDenormMode1664(
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_Priv() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_PRIORITY);
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_EnableDx10Clamp() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_ENABLE_DX10_CLAMP);
 }
 
@@ -387,12 +520,12 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_EnableDx10Clamp(bool value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_DebugMode() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_DEBUG_MODE);
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_EnableIeeeMode() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_ENABLE_IEEE_MODE);
 }
 
@@ -403,61 +536,118 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC1_EnableIeeeMode(bool value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_Bulky() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_BULKY);
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_CdbgUser() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_CDBG_USER);
 }
 
-// TODO: RESERVED FOR GFX6-8, ADD CHECKS
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_Fp16Ovfl() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_FP16_OVFL);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC1_Fp16Ovfl(bool value) {
+  assert(isGfx9Plus());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC1_FP16_OVFL);
   kdRepr.compute_pgm_rsrc1 = SET_VALUE(COMPUTE_PGM_RSRC1_FP16_OVFL);
 }
 
-// TODO: RESERVED FOR GFX6-9, ADD CHECKS
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_WgpMode() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_WGP_MODE);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC1_WgpMode(bool value) {
+  assert(isGfx10Plus());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC1_WGP_MODE);
   kdRepr.compute_pgm_rsrc1 = SET_VALUE(COMPUTE_PGM_RSRC1_WGP_MODE);
 }
 
-// TODO: RESERVED FOR GFX6-9, ADD CHECKS
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_MemOrdered() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_MEM_ORDERED);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC1_MemOrdered(bool value) {
+  assert(isGfx10Plus());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC1_MEM_ORDERED);
   kdRepr.compute_pgm_rsrc1 = SET_VALUE(COMPUTE_PGM_RSRC1_MEM_ORDERED);
 }
 
-// TODO: RESERVED FOR GFX6-9, ADD CHECKS
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC1_FwdProgress() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   return GET_VALUE(COMPUTE_PGM_RSRC1_FWD_PROGRESS);
 }
 
 void KernelDescriptor::setCOMPUTE_PGM_RSRC1_FwdProgress(bool value) {
+  assert(isGfx10Plus());
   uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
   fourByteBuffer = CLEAR_BITS(COMPUTE_PGM_RSRC1_FWD_PROGRESS);
   kdRepr.compute_pgm_rsrc1 = SET_VALUE(COMPUTE_PGM_RSRC1_FWD_PROGRESS);
+}
+
+bool KernelDescriptor::verifyCOMPUTE_PGM_RSRC1() const {
+  // PRIORITY must be 0 as CP is responsible for filling it
+  uint32_t priority = getCOMPUTE_PGM_RSRC1_Priority();
+  if (priority != 0)
+    return false;
+
+  // PRIV must be 0 as CP is responsible for filling it
+  bool priv = getCOMPUTE_PGM_RSRC1_Priv();
+  if (priv != 0)
+    return false;
+
+  // DEBUG_MODE must be 0 as CP is responsible for filling it
+  bool debugMode = getCOMPUTE_PGM_RSRC1_DebugMode();
+  if (debugMode != 0)
+    return false;
+
+  // BULKY must be 0 as CP is responsible for filling it
+  bool bulky = getCOMPUTE_PGM_RSRC1_Bulky();
+  if (bulky != 0)
+    return false;
+
+  // CDBG_USER must be 0 as CP is responsible for filling it
+  bool cdbgUser = getCOMPUTE_PGM_RSRC1_CdbgUser();
+  if (cdbgUser != 0)
+    return false;
+
+  // FP16_OVFL is reserved and must be 0 for GFX6-8
+  bool fp16Ovfl = getCOMPUTE_PGM_RSRC1_Fp16Ovfl();
+  if ((isGfx6() || isGfx7() || isGfx8()) && fp16Ovfl != 0)
+    return false;
+
+  // next 2 bits are reserved and must be 0
+  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc1;
+  for (int i = 1; i <= 2; ++i) {
+    bool bit = GET_ITH_BIT_AFTER(COMPUTE_PGM_RSRC1_FP16_OVFL, i);
+    if (bit)
+      return false;
+  }
+
+  // WGP_MODE is reserved and must be 0 for GFX6-9
+  bool wgpMode = getCOMPUTE_PGM_RSRC1_WgpMode();
+  if (!isGfx10Plus() && wgpMode != 0)
+    return false;
+
+  // MEM_ORDERED is reserved and must be 0 for GFX6-9
+  bool memOrdered = getCOMPUTE_PGM_RSRC1_MemOrdered();
+  if (!isGfx10Plus() && memOrdered != 0)
+    return false;
+
+  // FWD_PROGRESS is reserved and must be 0 for GFX6-9
+  bool fwdProgress = getCOMPUTE_PGM_RSRC1_FwdProgress();
+  if (!isGfx10Plus() && fwdProgress != 0)
+    return false;
+
+  return true;
 }
 //
 // ----- COMPUTE_PGM_RSRC1 end -----
@@ -469,7 +659,7 @@ uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC2() const {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnablePrivateSegment() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_PRIVATE_SEGMENT);
 }
 
@@ -481,7 +671,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnablePrivateSegment(bool value) {
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC2_UserSgprCount() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_USER_SGPR_COUNT);
 }
 
@@ -494,12 +684,12 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_UserSgprCount(uint32_t value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableTrapHandler() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_TRAP_HANDLER);
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdX() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_SGPR_WORKGROUP_ID_X);
 }
 
@@ -511,7 +701,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdX(bool value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdY() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_SGPR_WORKGROUP_ID_Y);
 }
 
@@ -523,7 +713,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdY(bool value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdZ() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_SGPR_WORKGROUP_ID_Z);
 }
 
@@ -535,7 +725,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupIdZ(bool value) {
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupInfo() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_SGPR_WORKGROUP_INFO);
 }
 
@@ -548,7 +738,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableSgprWorkgroupInfo(
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableVgprWorkitemId() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_VGPR_WORKITEM_ID);
 }
 
@@ -564,23 +754,23 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableVgprWorkitemId(
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionAddressWatch()
     const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_ADDRESS_WATCH);
 }
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionMemory() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_MEMORY);
 }
 
 uint32_t KernelDescriptor::getCOMPUTE_PGM_RSRC2_GranulatedLdsSize() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_GRANULATED_LDS_SIZE);
 }
 
 bool KernelDescriptor::
     getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpInvalidOperation() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(
       COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_IEEE_754_FP_INVALID_OPERATION);
 }
@@ -596,7 +786,7 @@ void KernelDescriptor::
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionFpDenormalSource()
     const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_FP_DENORMAL_SOURCE);
 }
 
@@ -611,7 +801,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableExceptionFpDenormalSource(
 
 bool KernelDescriptor::
     getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpDivisionByZero() const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(
       COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_IEEE_754_FP_DIVISION_BY_ZERO);
 }
@@ -627,7 +817,7 @@ void KernelDescriptor::
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpOverflow()
     const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_IEEE_754_FP_OVERFLOW);
 }
 
@@ -642,7 +832,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpOverflow(
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpUnderflow()
     const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_IEEE_754_FP_UNDERFLOW);
 }
 
@@ -657,7 +847,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpUnderflow(
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpInexact()
     const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_IEEE_754_FP_INEXACT);
 }
 
@@ -672,7 +862,7 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableExceptionIeee754FpInexact(
 
 bool KernelDescriptor::getCOMPUTE_PGM_RSRC2_EnableExceptionIntDivideByZero()
     const {
-  uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
   return GET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_INT_DIVIDE_BY_ZERO);
 }
 
@@ -684,6 +874,38 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableExceptionIntDivideByZero(
   kdRepr.compute_pgm_rsrc1 =
       SET_VALUE(COMPUTE_PGM_RSRC2_ENABLE_EXCEPTION_INT_DIVIDE_BY_ZERO);
 }
+
+bool KernelDescriptor::verifyCOMPUTE_PGM_RSRC2() const {
+  const uint32_t fourByteBuffer = kdRepr.compute_pgm_rsrc2;
+
+  // ENABLE_TRAP_HANDLER must be 0 as CP is responsible for filling it
+  bool enableTrapHandler = getCOMPUTE_PGM_RSRC2_EnableTrapHandler();
+  if (enableTrapHandler != 0)
+    return false;
+
+  // ENABLE_EXCEPTION_ADDRESS_WATCH must be 0 as CP is responsible for filling
+  // it
+  bool enableExceptionAddressWatch =
+      getCOMPUTE_PGM_RSRC2_EnableExceptionAddressWatch();
+  if (enableExceptionAddressWatch != 0)
+    return false;
+
+  // ENABLE_EXCEPTION_MEMORY must be 0 as CP is responsible for filling it
+  bool enableExceptionMemory = getCOMPUTE_PGM_RSRC2_EnableExceptionMemory();
+  if (enableExceptionMemory != 0)
+    return false;
+
+  // ENABLE_GRANULATED_LDS_SIZE must be 0 as CP is responsible for filling it
+  bool granulatedLdsSize = getCOMPUTE_PGM_RSRC2_GranulatedLdsSize();
+  if (granulatedLdsSize != 0)
+    return false;
+
+  // the last bit is reserved and must be 0
+  if (fourByteBuffer & 1 != 0)
+    return false;
+
+  return true;
+}
 //
 // ----- COMPUTE_PGM_RSRC2 end -----
 //
@@ -692,11 +914,15 @@ void KernelDescriptor::setCOMPUTE_PGM_RSRC2_EnableExceptionIntDivideByZero(
 #undef SET_VALUE
 #undef CLEAR_BITS
 #undef CHECK_WIDTH
+#undef GET_ITH_BIT_AFTER
 
-#define GET_VALUE(MASK) ((twoByteBuffer & MASK) >> (MASK##_SHIFT))
+#define GET_VALUE(MASK) ((twoByteBuffer & (MASK)) >> (MASK##_SHIFT))
 #define SET_VALUE(MASK) (twoByteBuffer | ((value) << (MASK##_SHIFT)))
-#define CLEAR_BITS(MASK) ((twoByteBuffer & !MASK))
+#define CLEAR_BITS(MASK) (twoByteBuffer & (~(MASK)))
 #define CHECK_WIDTH(MASK) ((value) >> (MASK##_WIDTH) == 0)
+
+#define GET_ITH_BIT_AFTER(MASK, i)                                             \
+  ((twoByteBuffer & ((1 << (MASK##_WIDTH) + i - 1) << (MASK##_SHIFT))) == 0)
 
 // ----- KERNEL_CODE_PROPERTIES begin -----
 //
@@ -716,7 +942,7 @@ void KernelDescriptor::setKernelCodeProperty_EnableSgprPrivateSegmentBuffer(
 }
 
 bool KernelDescriptor::getKernelCodeProperty_EnableSgprDispatchPtr() const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_DISPATCH_PTR);
 }
 
@@ -728,7 +954,7 @@ void KernelDescriptor::setKernelCodeProperty_EnableSgprDispatchPtr(bool value) {
 }
 
 bool KernelDescriptor::getKernelCodeProperty_EnableSgprQueuePtr() const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_QUEUE_PTR);
 }
 
@@ -741,7 +967,7 @@ void KernelDescriptor::setKernelCodeProperty_EnableSgprQueuePtr(bool value) {
 
 bool KernelDescriptor::getKernelCodeProperty_EnableSgprKernargSegmentPtr()
     const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_KERNARG_SEGMENT_PTR);
 }
 
@@ -755,7 +981,7 @@ void KernelDescriptor ::setKernelCodeProperty_EnableSgprKernargSegmentPtr(
 }
 
 bool KernelDescriptor::getKernelCodeProperty_EnableSgprDispatchId() const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_DISPATCH_ID);
 }
 
@@ -767,7 +993,7 @@ void KernelDescriptor::setKernelCodeProperty_EnableSgprDispatchId(bool value) {
 }
 
 bool KernelDescriptor::getKernelCodeProperty_EnableSgprFlatScratchInit() const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_FLAT_SCRATCH_INIT);
 }
 
@@ -781,7 +1007,7 @@ void KernelDescriptor::setKernelCodeProperty_EnableSgprFlatScratchInit(
 }
 
 bool KernelDescriptor::getKernelCodeProperty_EnablePrivateSegmentSize() const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_PRIVATE_SEGMENT_SIZE);
 }
 
@@ -794,32 +1020,76 @@ void KernelDescriptor::setKernelCodeProperty_EnablePrivateSegmentSize(
       SET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_SGPR_PRIVATE_SEGMENT_SIZE);
 }
 
-// TODO: RESERVED FOR GFX9, ADD CHECKS ACCORDINGLY
 bool KernelDescriptor::getKernelCodeProperty_EnableWavefrontSize32() const {
-  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   return GET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_WAVEFRONT_SIZE32);
 }
 
 void KernelDescriptor::setKernelCodeProperty_EnableWavefrontSize32(bool value) {
+  assert(isGfx10Plus());
   uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
   twoByteBuffer = CLEAR_BITS(KERNEL_CODE_PROPERTY_ENABLE_WAVEFRONT_SIZE32);
   kdRepr.kernel_code_properties =
       SET_VALUE(KERNEL_CODE_PROPERTY_ENABLE_WAVEFRONT_SIZE32);
 }
 
-// TODO: fix this in llvm KD first
 bool KernelDescriptor::getKernelCodeProperty_UsesDynamicStack() const {
-  // uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
-  // return GET_VALUE();
-  return 0;
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  return GET_VALUE(KERNEL_CODE_PROPERTY_USES_DYNAMIC_STACK);
 }
 
 void KernelDescriptor::setKernelCodeProperty_UsesDynamicStack(bool value) {
-  // uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
-  // twoByteBuffer =
-  //     CLEAR_BITS();
-  // kdRepr.kernel_code_properties =
-  //     SET_VALUE();
+  uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+  twoByteBuffer = CLEAR_BITS(KERNEL_CODE_PROPERTY_USES_DYNAMIC_STACK);
+  kdRepr.kernel_code_properties =
+      SET_VALUE(KERNEL_CODE_PROPERTY_USES_DYNAMIC_STACK);
+}
+
+bool KernelDescriptor::supportsArchitectedFlatScratch() const {
+  switch (amdgpuMach) {
+  case EF_AMDGPU_MACH_AMDGCN_GFX940:
+  case EF_AMDGPU_MACH_AMDGCN_GFX1100:
+  case EF_AMDGPU_MACH_AMDGCN_GFX1101:
+  case EF_AMDGPU_MACH_AMDGCN_GFX1102:
+  case EF_AMDGPU_MACH_AMDGCN_GFX1103:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool KernelDescriptor::verifyKernelCodeProperties() const {
+  const uint16_t twoByteBuffer = kdRepr.kernel_code_properties;
+
+  if (supportsArchitectedFlatScratch()) {
+    if (getKernelCodeProperty_EnableSgprPrivateSegmentBuffer())
+      return false;
+
+    if (getKernelCodeProperty_EnableSgprFlatScratchInit())
+      return false;
+  }
+
+  // next 3 bits after ENABLE_SGPR_PRIVATE_SEGMENT_SIZE are reserved and must be
+  // 0
+  for (int i = 1; i <= 3; ++i) {
+    bool bit = GET_ITH_BIT_AFTER(
+        KERNEL_CODE_PROPERTY_ENABLE_SGPR_PRIVATE_SEGMENT_SIZE, i);
+    if (bit)
+      return false;
+  }
+
+  bool enableWavefronSize32 = getKernelCodeProperty_EnableWavefrontSize32();
+  if (!isGfx10Plus() && enableWavefronSize32)
+    return false;
+
+  // next 4 bits after USES_DYNAMIC_STACK must be 0
+  for (int i = 1; i <= 4; ++i) {
+    bool bit = GET_ITH_BIT_AFTER(KERNEL_CODE_PROPERTY_USES_DYNAMIC_STACK, i);
+    if (bit)
+      return false;
+  }
+
+  return true;
 }
 //
 // ----- KERNEL_CODE_PROPERTIES end -----
@@ -829,6 +1099,7 @@ void KernelDescriptor::setKernelCodeProperty_UsesDynamicStack(bool value) {
 #undef SET_VALUE
 #undef CLEAR_BITS
 #undef CHECK_WIDTH
+#undef GET_ITH_BIT_AFTER
 
 void KernelDescriptor::dump(std::ostream &os) const {
   os << name << '\n';
@@ -893,12 +1164,47 @@ void KernelDescriptor::dumpDetailed(std::ostream &os) const {
 
 void KernelDescriptor::dumpCOMPUTE_PGM_RSRC3(std::ostream &os) const {
   const char *indent = "    ";
-
   os << "  -- COMPUTE_PGM_RSRC3 begin\n";
 
-  os << indent << getCOMPUTE_PGM_RSRC3() << '\n';
+  if (isGfx90aOr940())
+    dumpCOMPUTE_PGM_RSRC3_Gfx90aOr940(os);
+
+  else if (isGfx10Plus())
+    dumpCOMPUTE_PGM_RSRC3_Gfx10Plus(os);
+
+  else
+    os << indent << getCOMPUTE_PGM_RSRC3() << '\n';
 
   os << "  -- COMPUTE_PGM_RSRC3 end\n";
+}
+
+void KernelDescriptor::dumpCOMPUTE_PGM_RSRC3_Gfx90aOr940(
+    std::ostream &os) const {
+  assert(isGfx90aOr940());
+  const char *indent = "    ";
+
+  os << indent << "ACCUM_OFFSET : " << getCOMPUTE_PGM_RSRC3_AccumOffset()
+     << '\n';
+
+  os << indent << "TG_SPLIT : " << getCOMPUTE_PGM_RSRC3_TgSplit() << '\n';
+}
+
+void KernelDescriptor::dumpCOMPUTE_PGM_RSRC3_Gfx10Plus(std::ostream &os) const {
+  assert(isGfx10Plus());
+  const char *indent = "    ";
+
+  os << indent
+     << "SHARED_VGPR_COUNT : " << getCOMPUTE_PGM_RSRC3_SharedVgprCount()
+     << '\n';
+
+  os << indent << "INST_PREF_SIZE : " << getCOMPUTE_PGM_RSRC3_InstPrefSize()
+     << '\n';
+
+  os << indent << "TRAP_ON_START : " << getCOMPUTE_PGM_RSRC3_TrapOnStart()
+     << '\n';
+
+  os << indent << "TRAP_ON_END : " << getCOMPUTE_PGM_RSRC3_TrapOnEnd() << '\n';
+  os << indent << "IMAGE_OP : " << getCOMPUTE_PGM_RSRC3_ImageOp() << '\n';
 }
 
 void KernelDescriptor::dumpCOMPUTE_PGM_RSRC1(std::ostream &os) const {
@@ -1045,8 +1351,9 @@ void KernelDescriptor::dumpKernelCodeProperties(std::ostream &os) const {
   os << indent << "ENABLE_WAVEFRONT_SIZE_32 : "
      << getKernelCodeProperty_EnableWavefrontSize32() << '\n';
 
-  os << indent << "USES_DYNAMIC_STACK : "
-     << "todo in llvm first" << '\n';
+  os << indent
+     << "USES_DYNAMIC_STACK : " << getKernelCodeProperty_UsesDynamicStack()
+     << '\n';
 
   os << "  -- Kernel code properties end\n";
 }

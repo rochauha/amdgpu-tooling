@@ -3,13 +3,15 @@
 
 #include "third-party/AMDHSAKernelDescriptor.h"
 
+#include "Elf_X.h"
 #include "Symtab.h"
 
 #include <ostream>
 
 class KernelDescriptor {
 public:
-  KernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol);
+  KernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol,
+                   const Dyninst::Elf_X *elfHeader);
 
   uint32_t getGroupSegmentFixedSize() const;
   void setGroupSegmentFixedSize(uint32_t value);
@@ -241,21 +243,48 @@ public:
   void dump(std::ostream &os) const;
   void dumpDetailed(std::ostream &os) const;
 
+  bool verify() const;
+
 private:
   // read numBytes bytes starting at fromIndex in rawBytes into data
   void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
                 size_t fromIndex, size_t numBytes, uint8_t *data);
 
+  bool verifyCOMPUTE_PGM_RSRC3() const;
   void dumpCOMPUTE_PGM_RSRC3(std::ostream &os) const;
+  void dumpCOMPUTE_PGM_RSRC3_Gfx90aOr940(std::ostream &os) const;
+  void dumpCOMPUTE_PGM_RSRC3_Gfx10Plus(std::ostream &os) const;
+
+  bool verifyCOMPUTE_PGM_RSRC1() const;
   void dumpCOMPUTE_PGM_RSRC1(std::ostream &os) const;
+
+  bool verifyCOMPUTE_PGM_RSRC2() const;
   void dumpCOMPUTE_PGM_RSRC2(std::ostream &os) const;
+
+  bool verifyKernelCodeProperties() const;
   void dumpKernelCodeProperties(std::ostream &os) const;
+
+  bool isGfx6() const;
+  bool isGfx7() const;
+  bool isGfx8() const;
+  bool isGfx9() const;
+  bool isGfx90aOr940() const;
+  bool isGfx9Plus() const;
+  bool isGfx10() const;
+  bool isGfx10Plus() const;
+  bool isGfx11() const;
+
+  bool supportsArchitectedFlatScratch() const;
 
   std::string name;
   // canonical kernel descriptor struct
   llvm::amdhsa::kernel_descriptor_t kdRepr;
 
   Dyninst::SymtabAPI::Object *object;
+
+  const Dyninst::Elf_X *elfHdr;
+
+  unsigned amdgpuMach;
 };
 
 #endif
