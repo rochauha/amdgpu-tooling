@@ -181,9 +181,8 @@ bool KernelDescriptor::verify() const {
   if (verifyCOMPUTE_PGM_RSRC3() == false)
     return false;
 
-  // FIXME: this returns false
-  // if (verifyCOMPUTE_PGM_RSRC1() == false)
-  // return false;
+  if (verifyCOMPUTE_PGM_RSRC1() == false)
+    return false;
 
   if (verifyCOMPUTE_PGM_RSRC2() == false)
     return false;
@@ -233,7 +232,7 @@ void KernelDescriptor::setKernelCodeEntryByteOffset(int64_t value) {
 #define CHECK_WIDTH(MASK) ((value) >> (MASK##_WIDTH) == 0)
 
 #define GET_ITH_BIT_AFTER(MASK, i)                                             \
-  ((fourByteBuffer & ((1 << (MASK##_WIDTH) + i - 1) << (MASK##_SHIFT))) == 0)
+  (((fourByteBuffer & (1 << (MASK##_WIDTH) + i - 1)) << (MASK##_SHIFT)) != 0)
 
 // ----- COMPUTE_PGM_RSRC3 begin -----
 //
@@ -922,7 +921,7 @@ bool KernelDescriptor::verifyCOMPUTE_PGM_RSRC2() const {
 #define CHECK_WIDTH(MASK) ((value) >> (MASK##_WIDTH) == 0)
 
 #define GET_ITH_BIT_AFTER(MASK, i)                                             \
-  ((twoByteBuffer & ((1 << (MASK##_WIDTH) + i - 1) << (MASK##_SHIFT))) == 0)
+  (((twoByteBuffer & (1 << (MASK##_WIDTH) + i - 1)) << (MASK##_SHIFT)) != 0)
 
 // ----- KERNEL_CODE_PROPERTIES begin -----
 //
