@@ -30,6 +30,8 @@ target_include_directories(amdgpu-tooling PRIVATE
   ${DYNINST_INCLUDE_DIR}
   ${DYNINST_Boost_INCLUDE_DIRS}
   ${DYNINST_TBB_INCLUDE_DIRS}
+
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include
 )
 
 target_link_libraries(amdgpu-tooling

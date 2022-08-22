@@ -10,6 +10,8 @@
 #include <iostream>
 #include <string>
 
+#include "msgpack.hpp"
+
 using namespace Dyninst;
 using namespace SymtabAPI;
 
@@ -29,22 +31,13 @@ int main(int argc, char **argv) {
   Elf_X *elfHeader = Elf_X::newElf_X(buffer, length);
 
   // iterate over all section headers
-  // const unsigned long numSections = elfHeader->e_shnum();
-  // for (unsigned i = 0; i < numSections; ++i) {
-  //   Elf_X_Shdr &sectionHeader = elfHeader->get_shdr(i);
-  //   if (sectionHeader.sh_type() == SHT_NOTE) {
-  //
-  //     Elf_X_Nhdr note = sectionHeader.get_note();
-  //     std::cout << note.n_namesz() << '\n';
-  //     std::cout << note.n_descsz() << '\n';
-  //     std::cout << note.get_name() << '\n';
-  //
-  //     const char *rawData = (const char *)note.get_desc();
-  //     for (unsigned j = 0; j < note.n_descsz(); ++j) {
-  //       std::cout << rawData[j];
-  //     }
-  //   }
-  // }
+  const unsigned long numSections = elfHeader->e_shnum();
+  for (unsigned i = 0; i < numSections; ++i) {
+    Elf_X_Shdr &sectionHeader = elfHeader->get_shdr(i);
+    if (sectionHeader.sh_type() == SHT_NOTE) {
+      parseNoteMetadata(sectionHeader);
+    }
+  }
 
   // for loading symtab
   std::string name;
