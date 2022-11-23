@@ -5,6 +5,7 @@
 #include "third-party/AMDGPUFlags.h"
 
 #include <cassert>
+#include <cstring>
 #include <iomanip>
 
 using namespace llvm;
@@ -1356,4 +1357,8 @@ void KernelDescriptor::dumpKernelCodeProperties(std::ostream &os) const {
      << '\n';
 
   os << "  -- Kernel code properties end\n";
+}
+
+void KernelDescriptor::writeToMemory(char *memPtr) const {
+  std::memcpy(memPtr, &kdRepr, sizeof(kdRepr));
 }

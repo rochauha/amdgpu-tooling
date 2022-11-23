@@ -245,6 +245,8 @@ public:
 
   bool verify() const;
 
+  void writeToMemory(char *memPtr) const;
+
 private:
   // read numBytes bytes starting at fromIndex in rawBytes into data
   void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
@@ -277,10 +279,9 @@ private:
   bool supportsArchitectedFlatScratch() const;
 
   std::string name;
+
   // canonical kernel descriptor struct
   llvm::amdhsa::kernel_descriptor_t kdRepr;
-
-  Dyninst::SymtabAPI::Object *object;
 
   const Dyninst::Elf_X *elfHdr;
 
