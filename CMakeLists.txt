@@ -24,6 +24,7 @@ load_cache(${Dyninst_DIR}
 add_library(amdgpu-tooling
   KernelDescriptor.cpp
   KdUtils.cpp
+  DyninstUtility.cpp
 )
 
 target_include_directories(amdgpu-tooling PRIVATE
@@ -32,6 +33,7 @@ target_include_directories(amdgpu-tooling PRIVATE
   ${DYNINST_TBB_INCLUDE_DIRS}
 
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
 )
 
 target_link_libraries(amdgpu-tooling
@@ -43,7 +45,7 @@ target_compile_definitions(amdgpu-tooling PRIVATE ${DYNINST_Boost_DEFINITIONS})
 target_link_directories(amdgpu-tooling PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
 
 
-# tool
+# kd-tool
 add_executable(kd-tool
                kd-tool.cpp)
 
@@ -61,4 +63,14 @@ target_link_libraries(kd-tool
   symtabAPI
   dynElf
   ${DYNINST_Boost_LIBRARIES}
+)
+
+# rep-tool
+add_executable(rep-tool
+               rep-tool.cpp
+               DyninstUtility.cpp
+               )
+
+target_include_directories(rep-tool PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
 )
