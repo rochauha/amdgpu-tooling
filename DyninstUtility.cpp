@@ -177,10 +177,7 @@ void DyninstUtility::correctSectionInfoForRelocationSections(
 // some section. ELFIO creates a .shstrtab at index 1 which shifts indices
 // for other sections. We want to edit the section index for symbols in newObj
 // but ELFIO doesn't support editing in-place. So we edit contents of the buffer
-// directly.
-
-#include <elf.h>
-
+// directly using raw ELF structs.
 void DyninstUtility::correctSectionIndexForSymbols(const ELFIO::elfio &ogObj,
                                                    ELFIO::elfio &newObj) {
   ELFIO::section *ogSymtab = getSymtabSection(ogObj);
@@ -189,11 +186,11 @@ void DyninstUtility::correctSectionIndexForSymbols(const ELFIO::elfio &ogObj,
 
   ELFIO::section *newSymtab = getSymtabSection(newObj);
   char *newSymtabContents = (char *)newSymtab->get_data();
-  Elf64_Sym *symbols = (Elf64_Sym *)(newSymtabContents);
+  RawElf::Elf64_Sym *symbols = (RawElf::Elf64_Sym *)(newSymtabContents);
 
   for (ELFIO::Elf_Xword idx = 0; idx < ogSymtabAccessor.get_symbols_num();
        ++idx) {
-    Elf64_Half oldIdx = symbols[idx].st_shndx;
+    ELFIO::Elf64_Half oldIdx = symbols[idx].st_shndx;
     ELFIO::section *oldSection = ogObj.sections[oldIdx];
 
     auto iter = ogToNewSectionMap.find(oldSection);
