@@ -2,6 +2,11 @@
 #include <cassert>
 #include <cstring>
 
+void DyninstUtility::reset() {
+  ogToNewSectionMap.clear();
+  newToOgSectionMap.clear();
+}
+
 bool DyninstUtility::cloneObj(const ELFIO::elfio &fromObj,
                               ELFIO::elfio &toObj) {
   if (fromObj.get_type() != ELFIO::ET_REL) {
@@ -19,14 +24,88 @@ bool DyninstUtility::cloneObj(const ELFIO::elfio &fromObj,
   return true;
 }
 
-void DyninstUtility::cloneHeader(const ELFIO::elfio &ogObj,
-                                 ELFIO::elfio &newObj) {
-  newObj.create(ogObj.get_class(), ogObj.get_encoding());
-  newObj.set_os_abi(ogObj.get_os_abi());
-  newObj.set_abi_version(ogObj.get_abi_version());
-  newObj.set_type(ogObj.get_type());
-  newObj.set_machine(ogObj.get_machine());
-  newObj.set_entry(ogObj.get_entry());
+bool DyninstUtility::getSymbol(const ELFIO::elfio &elfObj,
+                               const std::string &name,
+                               RawElf::Elf64_Sym &symbol) const {
+
+  ELFIO::section *symtab = getSymtabSection(elfObj);
+  ELFIO::symbol_section_accessor symtabAccessor(elfObj, symtab);
+
+  ELFIO::Elf64_Addr value;
+  ELFIO::Elf_Xword size;
+  unsigned char bind;
+  unsigned char type;
+  ELFIO::Elf_Half sectionIndex;
+  unsigned char other;
+
+  if (symtabAccessor.get_symbol(name, value, size, bind, type, sectionIndex,
+                                other) == false) {
+    return false;
+  }
+
+#ifndef ELF64_ST_INFO
+#define ELF64_ST_INFO(b, t) (((b) << 4) + ((t)&0xf))
+
+  symbol.st_info = ELF64_ST_INFO(bind, type);
+  symbol.st_other = other;
+  symbol.st_shndx = sectionIndex;
+  symbol.st_value = value;
+  symbol.st_size = size;
+
+#undef ELF64_ST_INFO
+#endif
+
+  // Another ELFIO quirk - can't get the st_name field (index of symbol name in
+  // .strtab). So we manually go over the bytes in .strtab to get the index.
+
+  ELFIO::section *strtab = getStrtabSection(elfObj);
+  const char *strtabData = strtab->get_data();
+
+  ELFIO::Elf_Xword idx = 0;
+  for (idx; idx < strtab->get_size(); ++idx) {
+    if (std::strncmp(name.c_str(), &strtabData[idx], name.length()) == 0)
+      break;
+  }
+  symbol.st_name = idx;
+
+  return true;
+}
+
+ELFIO::section *DyninstUtility::getSection(const ELFIO::elfio &elfObj,
+                                           const std::string &name) const {
+  for (int i = 0; i < elfObj.sections.size(); ++i) {
+    if (elfObj.sections[i]->get_name() == name)
+      return elfObj.sections[i];
+  }
+  return nullptr;
+}
+
+ELFIO::section *
+DyninstUtility::getSymtabSection(const ELFIO::elfio &elfObj) const {
+  for (int i = 0; i < elfObj.sections.size(); ++i) {
+    auto section = elfObj.sections[i];
+    if (section->get_type() == ELFIO::SHT_SYMTAB)
+      return section;
+  }
+  return nullptr;
+}
+
+ELFIO::section *
+DyninstUtility::getStrtabSection(const ELFIO::elfio &elfObj) const {
+  for (int i = 0; i < elfObj.sections.size(); ++i) {
+    auto section = elfObj.sections[i];
+    if (section->get_type() == ELFIO::SHT_STRTAB)
+      return section;
+  }
+  return nullptr;
+}
+
+void DyninstUtility::replaceSectionContents(ELFIO::elfio &elfObj,
+                                            const std::string &sectionName,
+                                            const char *newContents,
+                                            size_t newSize) {
+  auto section = getSection(elfObj, sectionName);
+  section->set_data(newContents, newSize);
 }
 
 bool DyninstUtility::shouldClone(const ELFIO::section *section) {
@@ -43,6 +122,16 @@ bool DyninstUtility::shouldClone(const ELFIO::section *section) {
   default:
     return true;
   }
+}
+
+void DyninstUtility::cloneHeader(const ELFIO::elfio &ogObj,
+                                 ELFIO::elfio &newObj) {
+  newObj.create(ogObj.get_class(), ogObj.get_encoding());
+  newObj.set_os_abi(ogObj.get_os_abi());
+  newObj.set_abi_version(ogObj.get_abi_version());
+  newObj.set_type(ogObj.get_type());
+  newObj.set_machine(ogObj.get_machine());
+  newObj.set_entry(ogObj.get_entry());
 }
 
 void DyninstUtility::cloneSections(const ELFIO::elfio &ogObj,
@@ -106,40 +195,6 @@ void DyninstUtility::correctSectionLinks(const ELFIO::elfio &ogObj,
   }
 }
 
-void DyninstUtility::replaceSectionContents(ELFIO::elfio &elfObj, const std::string &sectionName, const char *newContents, size_t newSize) {
-  auto section = getSection(elfObj, sectionName);
-  section->set_data(newContents, newSize);
-}
-
-ELFIO::section *
-DyninstUtility::getSection(const ELFIO::elfio &elfObj, const std::string& name) const {
-  for (int i = 0; i < elfObj.sections.size(); ++i) {
-    if (elfObj.sections[i]->get_name() == name)
-      return elfObj.sections[i];
-  }
-  return nullptr;
-}
-
-ELFIO::section *
-DyninstUtility::getSymtabSection(const ELFIO::elfio &elfObj) const {
-  for (int i = 0; i < elfObj.sections.size(); ++i) {
-    auto section = elfObj.sections[i];
-    if (section->get_type() == ELFIO::SHT_SYMTAB)
-      return section;
-  }
-  return nullptr;
-}
-
-ELFIO::section *
-DyninstUtility::getStrtabSection(const ELFIO::elfio &elfObj) const {
-  for (int i = 0; i < elfObj.sections.size(); ++i) {
-    auto section = elfObj.sections[i];
-    if (section->get_type() == ELFIO::SHT_STRTAB)
-      return section;
-  }
-  return nullptr;
-}
-
 void DyninstUtility::correctSectionInfoForRelocationSections(
     const ELFIO::elfio &ogObj, ELFIO::elfio &newObj) {
   auto ogSections = ogObj.sections;
@@ -199,56 +254,4 @@ void DyninstUtility::correctSectionIndexForSymbols(const ELFIO::elfio &ogObj,
     }
     symbols[idx].st_shndx = iter->second->get_index();
   }
-}
-
-bool DyninstUtility::getSymbol(const ELFIO::elfio &elfObj,
-                               const std::string &name,
-                               RawElf::Elf64_Sym &symbol) const {
-
-  ELFIO::section *symtab = getSymtabSection(elfObj);
-  ELFIO::symbol_section_accessor symtabAccessor(elfObj, symtab);
-
-  ELFIO::Elf64_Addr value;
-  ELFIO::Elf_Xword size;
-  unsigned char bind;
-  unsigned char type;
-  ELFIO::Elf_Half sectionIndex;
-  unsigned char other;
-
-  if (symtabAccessor.get_symbol(name, value, size, bind, type, sectionIndex,
-                                other) == false) {
-    return false;
-  }
-
-#ifndef ELF64_ST_INFO
-#define ELF64_ST_INFO(b, t) (((b) << 4) + ((t)&0xf))
-
-  symbol.st_info = ELF64_ST_INFO(bind, type);
-  symbol.st_other = other;
-  symbol.st_shndx = sectionIndex;
-  symbol.st_value = value;
-  symbol.st_size = size;
-
-#undef ELF64_ST_INFO
-#endif
-
-  // Another ELFIO quirk - can't get the st_name field (index of symbol name in
-  // .strtab). So we manually go over the bytes in .strtab to get the index.
-
-  ELFIO::section *strtab = getStrtabSection(elfObj);
-  const char *strtabData = strtab->get_data();
-
-  ELFIO::Elf_Xword idx = 0;
-  for (idx; idx < strtab->get_size(); ++idx) {
-    if (std::strncmp(name.c_str(), &strtabData[idx], name.length()) == 0)
-      break;
-  }
-  symbol.st_name = idx;
-
-  return true;
-}
-
-void DyninstUtility::reset() {
-  ogToNewSectionMap.clear();
-  newToOgSectionMap.clear();
 }
