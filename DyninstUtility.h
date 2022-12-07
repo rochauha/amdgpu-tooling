@@ -16,6 +16,12 @@ public:
 
   bool cloneObj(const ELFIO::elfio &fromObj, ELFIO::elfio &toObj);
 
+  // Replace contents of the section sectionName with newContents
+  void replaceSectionContents(ELFIO::elfio &elfObj, const std::string &sectionName, const char *newContents, size_t newSize);
+
+  // When contents are replaced with og code + instrumentation, symtab needs to be updated. Use this method to update the offset of the symbol.
+  void updateSymbolOffset(ELFIO::elfio &elfObj, const std::string &symName, size_t newOffset);
+
 private:
   bool shouldClone(const ELFIO::section *section);
   void cloneHeader(const ELFIO::elfio &ogObj, ELFIO::elfio &newObj);

@@ -105,6 +105,20 @@ void DyninstUtility::correctSectionLinks(const ELFIO::elfio &ogObj,
   }
 }
 
+void DyninstUtility::replaceSectionContents(ELFIO::elfio &elfObj, const std::string &sectionName, const char *newContents, size_t newSize) {
+  auto section = getSection(elfObj, sectionName);
+  section->set_data(newContents, newSize);
+}
+
+ELFIO::section *
+DyninstUtility::getSection(const ELFIO::elfio &elfObj, const std::string& name) const {
+  for (int i = 0; i < elfObj.sections.size(); ++i) {
+    if (elfObj.sections[i]->get_name() == name)
+      return elfObj.sections[i];
+  }
+  return nullptr;
+}
+
 ELFIO::section *
 DyninstUtility::getSymtabSection(const ELFIO::elfio &elfObj) const {
   for (int i = 0; i < elfObj.sections.size(); ++i) {
@@ -187,6 +201,18 @@ void DyninstUtility::correctSectionIndexForSymbols(const ELFIO::elfio &ogObj,
     }
     symbols[idx].st_shndx = iter->second->get_index();
   }
+}
+
+
+bool DyninstUtility::getSymbol(const std::string &name,  Elf64_Sym& symbol) const {
+
+ELFIO::Elf64_Addr& value;
+ELFIO::Elf_Xwor& size;
+unsigned char bind;
+unsigned char type;
+ELFIO::Elf_Half section_index;
+unsigned char other;
+
 }
 
 void DyninstUtility::reset() {
