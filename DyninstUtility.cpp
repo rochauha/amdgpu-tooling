@@ -1,5 +1,6 @@
 #include "DyninstUtility.h"
 #include <cassert>
+#include <cstring>
 
 bool DyninstUtility::cloneObj(const ELFIO::elfio &fromObj,
                               ELFIO::elfio &toObj) {
@@ -203,16 +204,51 @@ void DyninstUtility::correctSectionIndexForSymbols(const ELFIO::elfio &ogObj,
   }
 }
 
+bool DyninstUtility::getSymbol(const ELFIO::elfio &elfObj,
+                               const std::string &name,
+                               RawElf::Elf64_Sym &symbol) const {
 
-bool DyninstUtility::getSymbol(const std::string &name,  Elf64_Sym& symbol) const {
+  ELFIO::section *symtab = getSymtabSection(elfObj);
+  ELFIO::symbol_section_accessor symtabAccessor(elfObj, symtab);
 
-ELFIO::Elf64_Addr& value;
-ELFIO::Elf_Xwor& size;
-unsigned char bind;
-unsigned char type;
-ELFIO::Elf_Half section_index;
-unsigned char other;
+  ELFIO::Elf64_Addr value;
+  ELFIO::Elf_Xword size;
+  unsigned char bind;
+  unsigned char type;
+  ELFIO::Elf_Half sectionIndex;
+  unsigned char other;
 
+  if (symtabAccessor.get_symbol(name, value, size, bind, type, sectionIndex,
+                                other) == false) {
+    return false;
+  }
+
+#ifndef ELF64_ST_INFO
+#define ELF64_ST_INFO(b, t) (((b) << 4) + ((t)&0xf))
+
+  symbol.st_info = ELF64_ST_INFO(bind, type);
+  symbol.st_other = other;
+  symbol.st_shndx = sectionIndex;
+  symbol.st_value = value;
+  symbol.st_size = size;
+
+#undef ELF64_ST_INFO
+#endif
+
+  // Another ELFIO quirk - can't get the st_name field (index of symbol name in
+  // .strtab). So we manually go over the bytes in .strtab to get the index.
+
+  ELFIO::section *strtab = getStrtabSection(elfObj);
+  const char *strtabData = strtab->get_data();
+
+  ELFIO::Elf_Xword idx = 0;
+  for (idx; idx < strtab->get_size(); ++idx) {
+    if (std::strncmp(name.c_str(), &strtabData[idx], name.length()) == 0)
+      break;
+  }
+  symbol.st_name = idx;
+
+  return true;
 }
 
 void DyninstUtility::reset() {
