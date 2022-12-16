@@ -24,6 +24,20 @@ bool DyninstUtility::cloneObj(const ELFIO::elfio &fromObj,
   return true;
 }
 
+bool DyninstUtility::getSymbol(const ELFIO::elfio &elfObj, const unsigned idx,
+                               RawElf::Elf64_Sym &symbol) const {
+
+  ELFIO::section *symtab = getSymtabSection(elfObj);
+  ELFIO::symbol_section_accessor symtabAccessor(elfObj, symtab);
+
+  if (idx >= symtabAccessor.get_symbols_num())
+    return false;
+
+  RawElf::Elf64_Sym *symbols = (RawElf::Elf64_Sym *)(symtab->get_data());
+  symbol = symbols[idx];
+  return true;
+}
+
 bool DyninstUtility::getSymbol(const ELFIO::elfio &elfObj,
                                const std::string &name,
                                RawElf::Elf64_Sym &symbol) const {
@@ -106,6 +120,53 @@ void DyninstUtility::replaceSectionContents(ELFIO::elfio &elfObj,
                                             size_t newSize) {
   auto section = getSection(elfObj, sectionName);
   section->set_data(newContents, newSize);
+}
+
+bool DyninstUtility::updateSymbol(ELFIO::elfio &elfObj,
+                                  RawElf::Elf64_Sym &symbol) const {
+  ELFIO::section *symtab = getSymtabSection(elfObj);
+  RawElf::Elf64_Sym *symbols = (RawElf::Elf64_Sym *)symtab->get_data();
+  ELFIO::symbol_section_accessor symtabAccessor(elfObj, symtab);
+
+  for (ELFIO::Elf_Xword i = 0; i < symtabAccessor.get_symbols_num(); ++i) {
+    if (symbols[i].st_name == symbol.st_name &&
+        symbols[i].st_info == symbol.st_info &&
+        symbols[i].st_other == symbol.st_other &&
+        symbols[i].st_shndx == symbol.st_shndx) {
+
+      symbols[i].st_value = symbol.st_value;
+      symbols[i].st_size = symbol.st_size;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool DyninstUtility::updateRel(ELFIO::elfio &elfObj, ELFIO::section *relSection,
+                               const unsigned idx, RawElf::Elf64_Rel &rel) {
+  assert(relSection->get_type() == ELFIO::SHT_REL);
+  ELFIO::relocation_section_accessor relAccessor(elfObj, relSection);
+  RawElf::Elf64_Rel *relocs = (RawElf::Elf64_Rel *)relSection->get_data();
+
+  if (idx >= relAccessor.get_entries_num())
+    return false;
+
+  relocs[idx] = rel;
+  return true;
+}
+
+bool DyninstUtility::updateRela(ELFIO::elfio &elfObj,
+                                ELFIO::section *relaSection, const unsigned idx,
+                                RawElf::Elf64_Rela &rela) {
+  assert(relaSection->get_type() == ELFIO::SHT_RELA);
+  ELFIO::relocation_section_accessor relaAccessor(elfObj, relaSection);
+  RawElf::Elf64_Rela *relocs = (RawElf::Elf64_Rela *)relaSection->get_data();
+
+  if (idx >= relaAccessor.get_entries_num())
+    return false;
+
+  relocs[idx] = rela;
+  return true;
 }
 
 bool DyninstUtility::shouldClone(const ELFIO::section *section) {
@@ -240,8 +301,7 @@ void DyninstUtility::correctSectionIndexForSymbols(const ELFIO::elfio &ogObj,
   ELFIO::symbol_section_accessor ogSymtabAccessor(ogObj, ogSymtab);
 
   ELFIO::section *newSymtab = getSymtabSection(newObj);
-  char *newSymtabContents = (char *)newSymtab->get_data();
-  RawElf::Elf64_Sym *symbols = (RawElf::Elf64_Sym *)(newSymtabContents);
+  RawElf::Elf64_Sym *symbols = (RawElf::Elf64_Sym *)(newSymtab->get_data());
 
   for (ELFIO::Elf_Xword idx = 0; idx < ogSymtabAccessor.get_symbols_num();
        ++idx) {
