@@ -10,10 +10,9 @@ set(CMAKE_MODULE_PATH
 
 # Import the Dyninst components
 find_package(Dyninst REQUIRED COMPONENTS symtabAPI dynElf)
-
 # Read the cache generated from building Dyninst
 load_cache(${Dyninst_DIR}
-  READ_WITH_PREFIX DYNINST_
+  # READ_WITH_PREFIX DYNINST_
   Boost_LIBRARIES
   Boost_INCLUDE_DIRS
   Boost_LIBRARY_DIRS
@@ -36,16 +35,14 @@ target_include_directories(amdgpu-tooling PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
 )
 
-target_link_libraries(amdgpu-tooling
-  dynElf
-  symtabAPI
+target_link_libraries(amdgpu-tooling PRIVATE
+  Dyninst::symtabAPI
 )
 
 target_compile_definitions(amdgpu-tooling PRIVATE ${DYNINST_Boost_DEFINITIONS})
 target_link_directories(amdgpu-tooling PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
 
 
-# kd-tool
 add_executable(kd-tool
                kd-tool.cpp)
 
@@ -58,10 +55,9 @@ target_include_directories(kd-tool PRIVATE
 target_compile_definitions(kd-tool PRIVATE ${DYNINST_Boost_DEFINITIONS})
 target_link_directories(kd-tool PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
 
-target_link_libraries(kd-tool
+target_link_libraries(kd-tool PRIVATE
   amdgpu-tooling
-  symtabAPI
-  dynElf
+  Dyninst::symtabAPI
   ${DYNINST_Boost_LIBRARIES}
 )
 
