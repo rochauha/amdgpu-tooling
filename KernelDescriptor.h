@@ -249,6 +249,10 @@ public:
 
   const std::string &getName() const { return name; }
 
+  // THIS IS ONLY TO HELP PATCHING THE ORIGINAL KD AFTER UPDATING IT.
+  // DON'T USE THIS FOR MODIFYING KDs.
+  void *getRawPtr() { return (void *)&kdRepr; }
+
 private:
   // read numBytes bytes starting at fromIndex in rawBytes into data
   void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
