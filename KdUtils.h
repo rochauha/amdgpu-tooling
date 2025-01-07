@@ -17,6 +17,8 @@ using KDPtr = std::shared_ptr<KernelDescriptor>;
 // use the one below for the KD check
 bool endsWith(const std::string &suffix, const std::string &str);
 
+bool startsWith(const std::string &prefix, const std::string &str);
+
 bool isKernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol);
 
 void parseNoteMetadata(Dyninst::Elf_X_Shdr &sectionHeader);

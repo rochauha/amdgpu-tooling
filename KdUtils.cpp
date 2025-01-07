@@ -15,6 +15,13 @@ bool endsWith(const std::string &suffix, const std::string &str) {
   return str.substr(str.length() - suffix.length()) == suffix;
 }
 
+bool startsWith(const std::string &prefix, const std::string &str) {
+  if (prefix.length() > str.length())
+    return false;
+
+  return str.substr(0, prefix.length()) == prefix;
+}
+
 bool isKernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol) {
   // symbol
   // - is in symtab, not dynsym
