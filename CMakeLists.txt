@@ -43,19 +43,19 @@ target_compile_definitions(amdgpu-tooling PRIVATE ${DYNINST_Boost_DEFINITIONS})
 target_link_directories(amdgpu-tooling PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
 
 
-add_executable(kd-tool
-               kd-tool.cpp)
+add_executable(kernel-info
+               kernel-info.cpp)
 
-target_include_directories(kd-tool PRIVATE
+target_include_directories(kernel-info PRIVATE
   ${DYNINST_INCLUDE_DIR}
   ${DYNINST_Boost_INCLUDE_DIRS}
   ${DYNINST_TBB_INCLUDE_DIRS}
 )
 
-target_compile_definitions(kd-tool PRIVATE ${DYNINST_Boost_DEFINITIONS})
-target_link_directories(kd-tool PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
+target_compile_definitions(kernel-info PRIVATE ${DYNINST_Boost_DEFINITIONS})
+target_link_directories(kernel-info PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
 
-target_link_libraries(kd-tool PRIVATE
+target_link_libraries(kernel-info PRIVATE
   amdgpu-tooling
   Dyninst::symtabAPI
   ${DYNINST_Boost_LIBRARIES}
