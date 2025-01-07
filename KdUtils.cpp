@@ -85,8 +85,25 @@ void dumpMsgpackObjType(msgpack::object &object) {
   }
 }
 
-// Initial parsing, based on hsuan-heng's code
-void parseNotes(const char *sectionContents, size_t length) {
+unsigned getKernargPtrRegister(KDPtr kd) {
+  unsigned kernargPtrReg = 0;
+  if (kd->getKernelCodeProperty_EnableSgprPrivateSegmentBuffer()) {
+    kernargPtrReg += 4;
+  }
+
+  if (kd->getKernelCodeProperty_EnableSgprDispatchPtr()) {
+    kernargPtrReg += 2;
+  }
+
+  if (kd->getKernelCodeProperty_EnableSgprQueuePtr()) {
+    kernargPtrReg += 2;
+  }
+
+  return kernargPtrReg;
+}
+
+int getKernargBufferSizeInternal(KDPtr kd, const char *sectionContents,
+                                 size_t length) {
   /*
    * Step 1, read entire .note section into buffer
    */
@@ -94,8 +111,8 @@ void parseNotes(const char *sectionContents, size_t length) {
   ss.write(sectionContents, length);
 
   std::map<std::string, msgpack::object> kvmap;
-  std::vector<msgpack::object> kernarg_list;
-  std::map<std::string, msgpack::object> kernarg_list_map;
+  std::vector<msgpack::object> kernargList;
+  std::map<std::string, msgpack::object> kernargListMap;
   std::string str = ss.str();
   msgpack::zone z;
 
@@ -114,7 +131,7 @@ void parseNotes(const char *sectionContents, size_t length) {
   msgpack::object_handle oh;
   std::string name_szstr = str.substr(0, 4);
   uint32_t name_sz = *((uint32_t *)name_szstr.c_str());
-  std::string note_type = str.substr(8, 4);
+  std::string noteType = str.substr(8, 4);
   std::string name = str.substr(12, name_sz);
   offset = 12 + name_sz;
 
@@ -127,36 +144,30 @@ void parseNotes(const char *sectionContents, size_t length) {
    * Unpack until we get to .group_segment_fixed_size
    *
    */
-  std::cout << str.size() - offset << '\n';
+  // std::cout << str.size() - offset << '\n';
   oh = msgpack::unpack(str.data() + offset, str.size() - offset);
-  msgpack::object map_root = oh.get();
-  dumpMsgpackObjType(map_root);
-  map_root.convert(kvmap);
-  kvmap["amdhsa.kernels"].convert(kernarg_list);
-  kernarg_list[0].convert(kernarg_list_map);
+  msgpack::object mapRoot = oh.get();
+  mapRoot.convert(kvmap);
+  kvmap["amdhsa.kernels"].convert(kernargList);
 
-  std::cout << " .sgpr_count = " << kernarg_list_map[".sgpr_count"]
-            << std::endl;
-  std::cout << " .vgpr_count = " << kernarg_list_map[".vgpr_count"]
-            << std::endl;
+  for (uint32_t k_list_i = 0; k_list_i < kernargList.size(); k_list_i++) {
+    kernargList[k_list_i].convert(kernargListMap);
+    int kernargSegmentSize = 0;
+    std::string kernelSymbol = "";
+
+    kernargListMap[".symbol"].convert(kernelSymbol);
+    kernargListMap[".kernarg_segment_size"].convert(kernargSegmentSize);
+
+    if (kernelSymbol == kd->getName()) {
+      return kernargSegmentSize;
+    }
+  }
+  return -1;
 }
 
-void parseNoteMetadata(Elf_X_Shdr &sectionHeader) {
-  assert(sectionHeader.sh_type() == SHT_NOTE &&
-         "The section must be a noite section");
-
-  Elf_X_Nhdr note = sectionHeader.get_note();
-
-  assert(note.n_namesz() == 7);
-  assert(strncmp(note.get_name(), "AMDGPU\0", 7) == 0 &&
-         "Name of note must be AMDGPU\0");
-
-  Elf_X_Data data = sectionHeader.get_data();
-  const char *rawData = (const char *)data.d_buf();
-  size_t length = data.d_size();
-
-  parseNotes(rawData, length);
-  // FIXME:
-  // Make the bytes parsable in msgpack by looking at the note contents. Right
-  // not we rely on Hsuan-Heng's manual parse of the entire note section.
+unsigned getKernargBufferSize(KDPtr kd, Dyninst::Elf_X_Shdr &sectionHeader) {
+  int v = getKernargBufferSizeInternal(
+      kd, sectionHeader.get_data().get_string(), sectionHeader.sh_size());
+  assert(v != -1);
+  return unsigned(v);
 }

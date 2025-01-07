@@ -247,6 +247,8 @@ public:
 
   void writeToMemory(char *memPtr) const;
 
+  const std::string &getName() const { return name; }
+
 private:
   // read numBytes bytes starting at fromIndex in rawBytes into data
   void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
