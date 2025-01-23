@@ -1,0 +1,46 @@
+#!/bin/sh
+
+MUTATOR=$1
+BIN_IN=$2
+BIN_UPDATED=$BIN_IN.updated
+BIN_INSTR=$BIN_IN-instr
+
+# Contains rows of following format :
+#   KernelName KernargBufferSize KernargPtrRegister>
+INFOS_FILE=$BIN_IN.info
+
+# Contains names of instrumented kernels
+NAMES_FILE=$BIN_IN.instrumentedKernelNames
+
+NOTE_IN=$BIN_IN.note
+NOTE_OUT=$NOTE_IN.expanded
+
+# The final output binary
+BIN_OUT=$BIN_IN.out
+
+# 1. Get necessary information about kernels before instrumenting
+kernel-info $BIN_IN > $INFOS_FILE
+
+# 2. Run the mutator, instrument kernels (also use the information from step 1).
+# This will also emit a file containing list of instrumented kernels ($NAMES_FILE)
+$MUTATOR -procedure-count $BIN_IN
+
+# 3. Update kernel descriptors for instrumented kernels
+update-kd $NAMES_FILE $BIN_INSTR
+
+# 4. Modify the note metadata
+#
+# 4.1 Extract the note section from original binary
+llvm-objcopy --dump-section=.note=$NOTE_IN $BIN_IN
+
+# 4.2 For each instrumented kernel, modify the metadata as follows:
+# - Expand the kernarg buffer with 1 additional argument, which the additional memory that we will allocate via the host.
+# - Increase SGPR usage to 102 (GFX908 only for now)
+expand-args $NAMES_FILE $NOTE_IN
+
+# 4.3 Copy the updated binary, remove the note section
+cp $BIN_UPDATED $BIN_OUT
+llvm-objcopy --remove-section=.note $BIN_OUT
+
+# 4.4 Add the expanded note section
+llvm-objcopy --add-section=.note=$NOTE_OUT $BIN_OUT
