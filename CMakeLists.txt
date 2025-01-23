@@ -79,6 +79,24 @@ target_link_libraries(update-kd PRIVATE
   ${DYNINST_Boost_LIBRARIES}
 )
 
+add_executable(expand-args
+               expand-args.cpp)
+
+target_include_directories(expand-args PRIVATE
+  ${DYNINST_INCLUDE_DIR}
+  ${DYNINST_Boost_INCLUDE_DIRS}
+  ${DYNINST_TBB_INCLUDE_DIRS}
+)
+
+target_compile_definitions(expand-args PRIVATE ${DYNINST_Boost_DEFINITIONS})
+target_link_directories(expand-args PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
+
+target_link_libraries(expand-args PRIVATE
+  amdgpu-tooling
+  Dyninst::symtabAPI
+  ${DYNINST_Boost_LIBRARIES}
+)
+
 # rep-tool
 add_executable(rep-tool
                rep-tool.cpp
