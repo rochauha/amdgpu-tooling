@@ -74,6 +74,70 @@ bool KernelDescriptor::isGfx11() const {
           amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX1102);
 }
 
+KernelDescriptor::KernelDescriptor(uint8_t *kdBytes, size_t kdSize) {
+  uint8_t *kdPtr = (uint8_t *)&kdRepr;
+
+  size_t idx = 0;
+  while (idx != kdSize) {
+    switch (idx) {
+    case amdhsa::GROUP_SEGMENT_FIXED_SIZE_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
+      idx += sizeof(uint32_t);
+      break;
+
+    case amdhsa::PRIVATE_SEGMENT_FIXED_SIZE_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
+      idx += sizeof(uint32_t);
+      break;
+
+    case amdhsa::KERNARG_SIZE_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
+      idx += sizeof(uint32_t);
+      break;
+
+    case amdhsa::RESERVED0_OFFSET:
+      readToKd(kdBytes, kdSize, idx, 4 * sizeof(int8_t), kdPtr + idx);
+      idx += 4 * sizeof(uint8_t);
+      break;
+
+    case amdhsa::KERNEL_CODE_ENTRY_BYTE_OFFSET_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint64_t), kdPtr + idx);
+      idx += sizeof(uint64_t);
+      break;
+
+    case amdhsa::RESERVED1_OFFSET:
+      readToKd(kdBytes, kdSize, idx, 20 * sizeof(uint8_t), kdPtr + idx);
+      idx += 20 * sizeof(uint8_t);
+      break;
+
+    case amdhsa::COMPUTE_PGM_RSRC3_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
+      idx += sizeof(uint32_t);
+      break;
+
+    case amdhsa::COMPUTE_PGM_RSRC1_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
+      idx += sizeof(uint32_t);
+      break;
+
+    case amdhsa::COMPUTE_PGM_RSRC2_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
+      idx += sizeof(uint32_t);
+      break;
+
+    case amdhsa::KERNEL_CODE_PROPERTIES_OFFSET:
+      readToKd(kdBytes, kdSize, idx, sizeof(uint16_t), kdPtr + idx);
+      idx += sizeof(uint16_t);
+      break;
+
+    case amdhsa::RESERVED2_OFFSET:
+      readToKd(kdBytes, kdSize, idx, 6 * sizeof(uint8_t), kdPtr + idx);
+      idx += 6 * sizeof(uint8_t);
+      break;
+    }
+  }
+}
+
 KernelDescriptor::KernelDescriptor(const Symbol *symbol, const Elf_X *elfHeader)
     : elfHdr(elfHeader) {
   assert(symbol && "symbol must be non-null");
@@ -1359,6 +1423,6 @@ void KernelDescriptor::dumpKernelCodeProperties(std::ostream &os) const {
   os << "  -- Kernel code properties end\n";
 }
 
-void KernelDescriptor::writeToMemory(char *memPtr) const {
-  std::memcpy(memPtr, &kdRepr, sizeof(kdRepr));
+void KernelDescriptor::writeToMemory(uint8_t *memPtr) const {
+  std::memcpy((char *)memPtr, (char *)&kdRepr, 64);
 }

@@ -13,6 +13,8 @@ public:
   KernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol,
                    const Dyninst::Elf_X *elfHeader);
 
+  KernelDescriptor(uint8_t *kdBytes, size_t kdSize);
+
   uint32_t getGroupSegmentFixedSize() const;
   void setGroupSegmentFixedSize(uint32_t value);
 
@@ -245,7 +247,7 @@ public:
 
   bool verify() const;
 
-  void writeToMemory(char *memPtr) const;
+  void writeToMemory(uint8_t *memPtr) const;
 
   const std::string &getName() const { return name; }
 
