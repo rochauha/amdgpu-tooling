@@ -2,8 +2,8 @@
 
 MUTATOR=$1
 BIN_IN=$2
-BIN_UPDATED=$BIN_IN.updated
 BIN_INSTR=$BIN_IN-instr
+BIN_UPDATED=$BIN_INSTR.updated
 
 # Contains rows of following format :
 #   KernelName KernargBufferSize KernargPtrRegister>
