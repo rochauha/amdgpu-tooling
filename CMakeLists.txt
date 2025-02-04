@@ -83,6 +83,13 @@ target_link_libraries(update-kd PRIVATE
 add_executable(expand-args
                expand-args.cpp)
 
+
+add_executable(extract-fatbin extract-fatbin.cpp)
+
+target_include_directories(extract-fatbin PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
+)
+
 # rep-tool
 add_executable(rep-tool
                rep-tool.cpp
