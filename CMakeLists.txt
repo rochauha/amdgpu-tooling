@@ -23,7 +23,6 @@ load_cache(${Dyninst_DIR}
 add_library(amdgpu-tooling
   KernelDescriptor.cpp
   KdUtils.cpp
-  DyninstUtility.cpp
 )
 
 target_include_directories(amdgpu-tooling PRIVATE
@@ -97,15 +96,5 @@ add_executable(update-fatbin update-fatbin.cpp)
 add_executable(update-exec update-exec.cpp)
 
 target_include_directories(update-exec PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
-)
-
-# rep-tool
-add_executable(rep-tool
-               rep-tool.cpp
-               DyninstUtility.cpp
-               )
-
-target_include_directories(rep-tool PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
 )
