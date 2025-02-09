@@ -1,46 +1,70 @@
 #!/bin/sh
 
+# TODO : Make this script more like a CLI tool
+
 MUTATOR=$1
-BIN_IN=$2
-BIN_INSTR=$BIN_IN-instr
-BIN_UPDATED=$BIN_INSTR.updated
+
+EXEC_IN=$2
+EXEC_OUT=$EXEC_IN.out
+
+FATBIN=$EXEC_IN.fatbin
+FATBIN_UPDATED=$FATBIN.updated
+
+GPUBIN=$FATBIN.gfx908
+GPUBIN_INSTR=$GPUBIN-instr
+GPUBIN_UPDATED=$GPUBIN_INSTR.updated
+GPUBIN_FINAL=$GPUBIN.final
 
 # Contains rows of following format :
 #   KernelName KernargBufferSize KernargPtrRegister>
-INFOS_FILE=$BIN_IN.info
+INFOS_FILE=$GPUBIN.info
 
 # Contains names of instrumented kernels
-NAMES_FILE=$BIN_IN.instrumentedKernelNames
+NAMES_FILE=$GPUBIN.instrumentedKernelNames
 
-NOTE_IN=$BIN_IN.note
+NOTE_IN=$GPUBIN.note
 NOTE_OUT=$NOTE_IN.expanded
 
-# The final output binary
-BIN_OUT=$BIN_IN.out
+# 1. Extract fatbin. This will output a $FATBIN
+extract-fatbin $EXEC_IN
 
-# 1. Get necessary information about kernels before instrumenting
-kernel-info $BIN_IN > $INFOS_FILE
+# 2. Extract gfx908 bin. This will output $GPUBIN
+extract-gpubin gfx908 $FATBIN
 
-# 2. Run the mutator, instrument kernels (also use the information from step 1).
+# 3. Get necessary information about kernels before instrumenting
+kernel-info $GPUBIN > $INFOS_FILE
+
+# 4. Run the mutator, instrument kernels (also use the information from step 3).
 # This will also emit a file containing list of instrumented kernels ($NAMES_FILE)
-$MUTATOR -procedure-count $BIN_IN
+$MUTATOR -procedure-count $GPUBIN
 
-# 3. Update kernel descriptors for instrumented kernels
-update-kd $NAMES_FILE $BIN_INSTR
+# 5. Update kernel descriptors for instrumented kernels
+# This will produce $GPUBIN_UPDATED
+update-kd $NAMES_FILE $GPUBIN_INSTR
 
 # 4. Modify the note metadata
 #
 # 4.1 Extract the note section from original binary
-llvm-objcopy --dump-section=.note=$NOTE_IN $BIN_IN
+llvm-objcopy --dump-section=.note=$NOTE_IN $GPUBIN
 
 # 4.2 For each instrumented kernel, modify the metadata as follows:
 # - Expand the kernarg buffer with 1 additional argument, which the additional memory that we will allocate via the host.
-# - Increase SGPR usage to 102 (GFX908 only for now)
+# - Increase SGPR usage to 112 (GFX908 only for now)
+# This will emit $NOTE_OUT.
 expand-args $NAMES_FILE $NOTE_IN
 
 # 4.3 Copy the updated binary, remove the note section
-cp $BIN_UPDATED $BIN_OUT
-llvm-objcopy --remove-section=.note $BIN_OUT
+cp $GPUBIN_UPDATED $GPUBIN_FINAL
+llvm-objcopy --remove-section=.note $GPUBIN_FINAL
 
 # 4.4 Add the expanded note section
-llvm-objcopy --add-section=.note=$NOTE_OUT $BIN_OUT
+llvm-objcopy --add-section=.note=$NOTE_OUT $GPUBIN_FINAL
+
+# 5. Update original fatbin with instrumented gpu binary ($GPUBIN_FINAL)
+# This will emit $FATBIN_UPDATED
+update-fatbin gfx908 $GPUBIN_FINAL $FATBIN
+
+# 6. Update the original executable ($EXEC_IN) by embedding $FATBIN_UPDATED
+# This will emit $EXEC_OUT
+update-exec $EXEC_IN $FATBIN_UPDATED $EXEC_OUT
+chmod +x $EXEC_OUT
