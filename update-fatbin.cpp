@@ -49,8 +49,9 @@ static void getgpuBinInfos(const std::string &fatbinPath,
     uint64_t idLength;
     fatbin.read(reinterpret_cast<char *>(&idLength), sizeof(idLength));
 
-    char id[idLength];
+    char id[idLength+1];
     fatbin.read(id, idLength);
+    id[idLength] = 0; // Make id null-terminated
 
     GpuBinInfo info(id, bundleEntryCodeObjectOffset, size);
     infos.push_back(info);
@@ -83,7 +84,7 @@ static uint64_t alignUp(uint64_t value, uint64_t alignment) {
     return value;
 
   uint64_t diff = value % alignment;
-  return value + (alignment - diff);
+  return diff == 0 ? value : value + (alignment - diff);
 }
 
 int main(int argc, char *argv[]) {
@@ -115,7 +116,7 @@ int main(int argc, char *argv[]) {
   elfBin.seekg(0, std::ios::end);
   std::streampos pos = elfBin.tellg();
   std::streamoff offset = pos - std::streampos(0);
-  uint64_t elfBinSize = static_cast<int>(offset);
+  uint64_t elfBinSize = static_cast<uint64_t>(offset);
 
   std::cout << "elfBinSize = " << elfBinSize << '\n';
 
@@ -141,7 +142,7 @@ int main(int argc, char *argv[]) {
   // dumpInfos(gpuBinInfos);
   // dumpInfos(newBinInfos);
 
-  // Now we write a new fatbin
+  // Now we create a new fatbin
   std::ofstream newFatbin(fatbinPath + ".updated", std::ios::binary);
   if (!newFatbin) {
     std::cerr << "error : can't open new fatbin" << std::endl;
@@ -150,7 +151,7 @@ int main(int argc, char *argv[]) {
 
   // "write" doesn't write null-terminated strings
   // Magic string
-  std::string magicStr = "__CLANG_OFFLOAD_BUNDLE_";
+  std::string magicStr = "__CLANG_OFFLOAD_BUNDLE__";
   newFatbin.write(magicStr.c_str(), magicStr.size());
 
   assert(gpuBinInfos.size() == newBinInfos.size());
@@ -173,53 +174,59 @@ int main(int argc, char *argv[]) {
     newFatbin.write(info.id.c_str(), length);
   }
 
-  // Padding before we start writing the ELF files
-  pos = newFatbin.tellp();
-  offset = static_cast<int>(pos - std::streampos(0));
-  uint64_t paddingCount = alignUp(offset, 0x1000) - pos;
-  std::vector<char> padding(paddingCount, ' ');
-  newFatbin.write(padding.data(), paddingCount);
+
 
   // Now we write the GPU objects
-  // 1. For each object upto archIndex copy contents from fatbin to newFatbin and write padding.
-  // 2. Now write the updated fatbin provided as argument.
-  // 3. For each object after archIndex, copy contents from fatbin to newFatbin and write padding.
+  // 1. For each object upto archIndex, write padding, and copy contents from fatbin to newFatbin.
+  //    Also assert that the offsets match what we computed.
+  //
+  // 2. Now write padding, and the updated gpubin provided as argument.
+  //
+  // 3. For each object after archIndex, write padding, and copy contents from fatbin to newFatbin.
   //    Also assert that the offsets match what we computed.
 
   std::ifstream fatbin(fatbinPath, std::ios::binary);
   assert(fatbin);
 
+  // Writing upto archIndex
   for (int i = 0; i < archIndex; ++i) {
     char buffer[gpuBinInfos[i].size];
     fatbin.seekg(gpuBinInfos[i].offset, std::ios::beg);
     fatbin.read(buffer, gpuBinInfos[i].size);
 
+    // Write padding before we start writing the ELF files
     pos = newFatbin.tellp();
     offset = static_cast<int>(pos - std::streampos(0));
 
-    assert(offset == gpuBinInfos[i].offset && "Offset while writing ELF in new fatbin must match what we computed");
-    newFatbin.write(buffer, gpuBinInfos[i].size);
-
-    pos = newFatbin.tellp();
-    offset = static_cast<int>(pos - std::streampos(0));
-    uint64_t paddingCount = offset % 0x1000;
-    std::vector<char> padding(paddingCount, ' ');
+    uint64_t paddingCount = alignUp(offset, 0x1000) - offset;
+    std::vector<char> padding(paddingCount, 0);
     newFatbin.write(padding.data(), paddingCount);
+
+    pos = newFatbin.tellp();
+    offset = static_cast<int>(pos - std::streampos(0));
+
+    // std::cout << offset << ' ' << gpuBinInfos[i].offset << '\n';
+    assert(offset == newBinInfos[i].offset && "Offset while writing ELF in new fatbin must match what we computed");
+    newFatbin.write(buffer, gpuBinInfos[i].size);
   }
+
+  // The instrumented gpubin
+  pos = newFatbin.tellp();
+  offset = static_cast<int>(pos - std::streampos(0));
+
+  uint64_t newBinPaddingCount = alignUp(offset, 0x1000) - offset;
+  std::cout << "padding for instrumented bin = " << newBinPaddingCount << " bytes\n";
+
+  std::vector<char> newBinPadding(newBinPaddingCount, ' ');
+  newFatbin.write(newBinPadding.data(), newBinPaddingCount);
 
   pos = newFatbin.tellp();
   offset = static_cast<int>(pos - std::streampos(0));
 
   std::cout << "writing instrumented bin at offset " << offset << '\n';
-
   newFatbin.write(elfBinContents, elfBinSize);
-  uint64_t newBinPaddingCount = alignUp(offset + elfBinSize, 0x1000) - offset - elfBinSize;
-  std::vector<char> newBinPadding(newBinPaddingCount, ' ');
-  newFatbin.write(newBinPadding.data(), newBinPaddingCount);
 
-  std::cout << "padding for instrumented bin = " << newBinPaddingCount << " bytes\n";
-
-
+  // After archIndex
   for (int i = archIndex + 1; i < gpuBinInfos.size(); ++i) {
     char buffer[gpuBinInfos[i].size];
     fatbin.seekg(gpuBinInfos[i].offset, std::ios::beg);
@@ -228,12 +235,16 @@ int main(int argc, char *argv[]) {
     pos = newFatbin.tellp();
     offset = static_cast<int>(pos - std::streampos(0));
 
-    assert(newBinInfos[i].offset == offset);
-    newFatbin.write(buffer, gpuBinInfos[i].size);
-
-    uint64_t paddingCount = alignUp(offset + gpuBinInfos[i].size, 0x1000) - offset - gpuBinInfos[i].size;
-    std::vector<char> padding(paddingCount, ' ');
+    uint64_t paddingCount = alignUp(offset, 0x1000) - offset;
+    std::vector<char> padding(paddingCount, 0);
     newFatbin.write(padding.data(), paddingCount);
+
+    pos = newFatbin.tellp();
+    offset = static_cast<int>(pos - std::streampos(0));
+
+    // std::cout << offset << ' ' << gpuBinInfos[i].offset << ' ' << newBinInfos[i].offset << '\n';
+    assert(offset == newBinInfos[i].offset && "Offset while writing ELF in new fatbin must match what we computed");
+    newFatbin.write(buffer, gpuBinInfos[i].size);
   }
 
   fatbin.close();
