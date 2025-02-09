@@ -90,6 +90,8 @@ target_include_directories(extract-fatbin PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
 )
 
+add_executable(extract-gpubin extract-gpubin.cpp)
+
 # rep-tool
 add_executable(rep-tool
                rep-tool.cpp
