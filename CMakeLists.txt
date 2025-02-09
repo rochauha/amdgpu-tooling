@@ -92,6 +92,8 @@ target_include_directories(extract-fatbin PRIVATE
 
 add_executable(extract-gpubin extract-gpubin.cpp)
 
+add_executable(update-fatbin update-fatbin.cpp)
+
 # rep-tool
 add_executable(rep-tool
                rep-tool.cpp
