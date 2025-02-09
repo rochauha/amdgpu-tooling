@@ -70,12 +70,17 @@ ELFIO::section *getFatbinWrapperSection(const ELFIO::elfio &file) {
 //
 // === SECTION-GETTING HELPERS END ===
 
-static size_t getFileSizeAndReset(std::ifstream &file) {
+static size_t getFileSize(const std::string& filePath) {
+  std::ifstream file(filePath);
   assert(file.is_open());
 
   file.seekg(0, std::ifstream::end);
-  size_t size = file.tellg();
-  file.seekg(0, std::ifstream::beg);
+
+  std::streampos pos = file.tellg();
+  std::streamoff offset = pos - std::streampos(0);
+  uint64_t size = static_cast<size_t>(offset);
+
+  file.close();
   return size;
 }
 
@@ -416,10 +421,11 @@ int main(int argc, char **argv) {
 
   cloneExec(execFile, newExecFile);
 
-  newFatbin.open(newFatbinPath, std::ios::in);
-  size_t newFatbinSize = getFileSizeAndReset(newFatbin);
+
+  size_t newFatbinSize = getFileSize(newFatbinPath);
   char *newFatbinContent = new char[newFatbinSize];
 
+  newFatbin.open(newFatbinPath, std::ios::binary);
   newFatbin.read(newFatbinContent, newFatbinSize);
   addNewFatbin(newExecFile, newFatbinContent, newFatbinSize);
 
