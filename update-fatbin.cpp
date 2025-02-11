@@ -31,8 +31,9 @@ static void getgpuBinInfos(const std::string &fatbinPath,
     exit(1);
   }
 
-  char buffer[24];
+  char buffer[24 + 1];
   fatbin.read(buffer, 24);
+  buffer[24] = 0;
 
   assert(std::string(buffer) == "__CLANG_OFFLOAD_BUNDLE__");
 
