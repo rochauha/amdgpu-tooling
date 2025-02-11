@@ -15,7 +15,6 @@
 using namespace std;
 #include <chrono>
 
-
 int old_kernarg_size;
 int old_kernarg_num;
 
