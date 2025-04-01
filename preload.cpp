@@ -33,8 +33,8 @@ extern "C" void **__hipRegisterFatBinary(void *data) {
 
   __CudaFatBinaryWrapper *fbwrapper =
       reinterpret_cast<__CudaFatBinaryWrapper *>(data);
- // fprintf(fdebug, "data %lx : %s %lx\n", (uint64_t)data, (char *)data,
-        // (uint64_t)fbwrapper->binary);
+  // fprintf(fdebug, "data %lx : %s %lx\n", (uint64_t)data, (char *)data,
+  // (uint64_t)fbwrapper->binary);
   return realRegisterFatBinary(data);
 }
 
@@ -45,12 +45,13 @@ typedef void (*registerFunc_t)(void **modules, const void *hostFunction,
 
 registerFunc_t realRegisterFunction;
 
-// extern "C" void __hipRegisterFunction(void **modules, const void *hostFunction,
+// extern "C" void __hipRegisterFunction(void **modules, const void
+// *hostFunction,
 //                                       char *deviceFunction,
 //                                       const char *deviceName,
 //                                       unsigned int threadLimit, uint3 *tid,
-//                                       uint3 *bid, dim3 *blockDim, dim3 *gridDim,
-//                                       int *wSize) {
+//                                       uint3 *bid, dim3 *blockDim, dim3
+//                                       *gridDim, int *wSize) {
 //   if (realRegisterFunction == 0) {
 //     realRegisterFunction =
 //         (registerFunc_t)dlsym(RTLD_NEXT, "__hipRegisterFunction");
@@ -81,7 +82,7 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   assert(realLaunch != 0);
 
-  unsigned instrumentationDataHost[1] = {0};
+  unsigned *instrumentationDataHost = (unsigned *)calloc(1, sizeof(unsigned));
   unsigned *instrumentationDataDevice;
 
   hipError_t hip_ret =
@@ -90,29 +91,29 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   std::cerr << "allocated additional memory\n";
 
   hip_ret = hipMemcpy(instrumentationDataDevice, instrumentationDataHost,
-                      /* size=*/1, hipMemcpyHostToDevice);
+                      /* size=*/sizeof(unsigned), hipMemcpyHostToDevice);
 
   assert(hip_ret == hipSuccess);
 
-
-  int oldKernargNum = 5;
-  int new_kernarg_vec_size = (oldKernargNum + 1) * 8;
-  void **newArgs = (void **) malloc(new_kernarg_vec_size);
+  // int oldKernargNum = 5;
+  int new_kernarg_vec_size = 288;
+  void **newArgs = (void **)malloc(new_kernarg_vec_size);
   std::cerr << "allocated newArgs\n";
-  memcpy(newArgs, args, oldKernargNum * 8);
+  memcpy(newArgs, args, 288);
 
   std::cerr << "copied oldArgs to newArgs\n";
 
-  *(newArgs + oldKernargNum) = (void *)(instrumentationDataDevice);
+  newArgs[(104/8)] = (void *)(instrumentationDataDevice);
   std::cerr << "set additional arg\n";
 
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
+  hipDeviceSynchronize();
 
   std::cerr << "real launch done\n";
 
   hipStreamSynchronize(stream);
 
-  hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ 4,
+  hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ sizeof(unsigned),
             hipMemcpyDeviceToHost);
 
   std::cout << instrumentationDataHost[0] << '\n';

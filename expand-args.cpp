@@ -71,22 +71,28 @@ void expand_args(const std::string &fileName,
     uint32_t oldKernargSize = 0;
     kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
 
+    uint32_t newArgOffset = 98;
+    while(newArgOffset % 8) {
+      ++newArgOffset;
+    }
+
     // Create a new argument, which is pointer to the dyninst's memory buffer for variables
     std::map<std::string, msgpack::object> newArgument;
     newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
     newArgument[".address_space"] = msgpack::object(std::string("global"), z);
-    newArgument[".offset"] = msgpack::object(oldKernargSize, z);
+    newArgument[".offset"] = msgpack::object(newArgOffset, z);
     newArgument[".size"] = msgpack::object(8, z);
     newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
-    newArgument[".actual_access"] = msgpack::object(std::string("read_write"), z);
-    newArgument[".is_const"] = msgpack::object(true, z); // the pointer can't change address
-    newArgument[".is_restrict"] = msgpack::object(false, z); // keep it false to be safe
-    newArgument[".is_volatile"] = msgpack::object(false, z); // keep it false to be safe
-
+    newArgument[".access"] = msgpack::object(std::string("read_write"), z);
+    // newArgument[".is_const"] = msgpack::object(true, z); // the pointer can't change address
+    // newArgument[".is_restrict"] = msgpack::object(false, z); // keep it false to be safe
+    // newArgument[".is_volatile"] = msgpack::object(false, z); // keep it false to be safe
+    //
     argumentListMap.push_back(msgpack::object(newArgument, z));
     kernargListMap[".args"] = msgpack::object(argumentListMap, z);
 
-    uint32_t newKernargSize = oldKernargSize + 8;
+    uint32_t newKernargSize = 288;//newArgOffset + 8;
+
     kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
     // We also set spr_count to 102 (max count for gfx908)
