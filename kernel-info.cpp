@@ -15,7 +15,10 @@
 using namespace Dyninst;
 using namespace SymtabAPI;
 
-// KernelName KernargBufferSize KernargPtrRegister
+// KernelName NewArgOffset KernargBufferSize KernargPtrRegister
+//
+// NewArgOffset is the offset of the new argument for the kernal if it were to
+// be instrumented.
 
 int main(int argc, char **argv) {
   assert(argc == 2);
@@ -61,9 +64,12 @@ int main(int argc, char **argv) {
   for (const Symbol *symbol : symbols) {
     if (isKernelDescriptor(symbol)) {
       KDPtr kd = std::make_shared<KernelDescriptor>(symbol, elfHeader);
+      int newArgOffset = getNewArgOffset(kd, noteSectionHeader->get_data().get_string(), noteSectionHeader->sh_size());
+      assert(newArgOffset != -1);
+
       std::cout << kd->getName() << ' '
+                << newArgOffset << ' '
                 << kd->getKernargSize() << ' '
-                // << getKernargBufferSize(kd, *noteSectionHeader) << ' '
                 << getKernargPtrRegister(kd) << '\n';
     }
   }

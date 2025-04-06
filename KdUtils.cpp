@@ -1,6 +1,6 @@
 #include "Region.h"
 
-#include "msgpack.hpp"
+
 
 #include "KdUtils.h"
 
@@ -109,8 +109,7 @@ unsigned getKernargPtrRegister(KDPtr kd) {
   return kernargPtrReg;
 }
 
-int getKernargBufferSizeInternal(KDPtr kd, const char *sectionContents,
-                                 size_t length) {
+int getNewArgOffset(KDPtr kd, const char *sectionContents, size_t length) {
   /*
    * Step 1, read entire .note section into buffer
    */
@@ -142,8 +141,9 @@ int getKernargBufferSizeInternal(KDPtr kd, const char *sectionContents,
   std::string name = str.substr(12, name_sz);
   offset = 12 + name_sz;
 
-  while (offset % 4)
+  while (offset % 4) {
     offset++;
+  }
 
   /*
    * Now we are ready to process the msgpack data
@@ -159,22 +159,45 @@ int getKernargBufferSizeInternal(KDPtr kd, const char *sectionContents,
 
   for (uint32_t k_list_i = 0; k_list_i < kernargList.size(); k_list_i++) {
     kernargList[k_list_i].convert(kernargListMap);
-    int kernargSegmentSize = 0;
-    std::string kernelSymbol = "";
 
+    std::string kernelSymbol = "";
     kernargListMap[".symbol"].convert(kernelSymbol);
-    kernargListMap[".kernarg_segment_size"].convert(kernargSegmentSize);
 
     if (kernelSymbol == kd->getName()) {
-      return kernargSegmentSize;
+      int kernargSegmentSize = 0;
+      kernargListMap[".kernarg_segment_size"].convert(kernargSegmentSize);
+      assert(kernargSegmentSize == kd->getKernargSize());
+
+      std::vector<msgpack::object> argumentListMap;
+      kernargListMap[".args"].convert(argumentListMap);
+      return getFirstHiddenArgOffset(argumentListMap);
     }
   }
+
   return -1;
 }
 
-unsigned getKernargBufferSize(KDPtr kd, Dyninst::Elf_X_Shdr &sectionHeader) {
-  int v = getKernargBufferSizeInternal(
-      kd, sectionHeader.get_data().get_string(), sectionHeader.sh_size());
-  assert(v != -1);
-  return unsigned(v);
+int getFirstHiddenArgOffset(std::vector<msgpack::object> &argumentListMap) {
+  std::map<std::string, msgpack::object> arg;
+  std::string valueKind = "";
+
+  int i = 0;
+  for (i; i < argumentListMap.size(); ++i) {
+    argumentListMap[i].convert(arg);
+
+    msgpack::object valueKindObject = arg[".value_kind"];
+    valueKindObject.convert(valueKind);
+
+    if (startsWith("hidden", valueKind)) {
+      break;
+    }
+  }
+
+  assert(i < argumentListMap.size() && startsWith("hidden", valueKind));
+
+  int offset;
+  arg[".offset"].convert(offset);
+  assert(offset > 0);
+
+  return offset;
 }
