@@ -62,7 +62,8 @@ int main(int argc, char **argv) {
     if (isKernelDescriptor(symbol)) {
       KDPtr kd = std::make_shared<KernelDescriptor>(symbol, elfHeader);
       std::cout << kd->getName() << ' '
-                << getKernargBufferSize(kd, *noteSectionHeader) << ' '
+                << kd->getKernargSize() << ' '
+                // << getKernargBufferSize(kd, *noteSectionHeader) << ' '
                 << getKernargPtrRegister(kd) << '\n';
     }
   }
