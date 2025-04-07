@@ -4,6 +4,76 @@
 #include <msgpack.hpp>
 #include <sstream>
 #include <string>
+#include <vector>
+
+static bool startsWith(const std::string &prefix, const std::string &str) {
+  if (prefix.length() > str.length())
+    return false;
+
+  return str.substr(0, prefix.length()) == prefix;
+}
+
+// Create a new argument, which is pointer to the dyninst's memory buffer for
+// variables
+void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
+                       int offset, msgpack::zone &z) {
+  newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
+  newArgument[".address_space"] = msgpack::object(std::string("global"), z);
+  newArgument[".offset"] = msgpack::object(offset, z);
+  newArgument[".size"] = msgpack::object(8, z);
+  newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
+  newArgument[".access"] = msgpack::object(std::string("read_write"), z);
+}
+
+void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
+                           std::vector<msgpack::object> &newArgumentListMap,
+                           msgpack::zone &z) {
+  std::map<std::string, msgpack::object> arg;
+  std::string valueKind;
+  int i = 0;
+  for (i; i < ogArgumentListMap.size(); ++i) {
+    ogArgumentListMap[i].convert(arg);
+    msgpack::object valueKindObject = arg[".value_kind"];
+    valueKindObject.convert(valueKind);
+    if (startsWith("hidden", valueKind)) {
+      break;
+    }
+    newArgumentListMap.push_back(ogArgumentListMap[i]);
+  }
+
+  // Now we are at the first hidden arg.
+  assert(i < ogArgumentListMap.size() && startsWith("hidden", valueKind));
+
+  std::map<std::string, msgpack::object> hiddenArg;
+  ogArgumentListMap[i].convert(hiddenArg);
+
+  int hiddenArgSize;
+  hiddenArg[".size"].convert(hiddenArgSize);
+
+  int hiddenArgOffset;
+  hiddenArg[".offset"].convert(hiddenArgOffset);
+
+  std::map<std::string, msgpack::object> newArg;
+  createNewArgument(newArg, hiddenArgOffset, z);
+  newArgumentListMap.push_back(msgpack::object(newArg, z));
+
+  // Increment offsets for all further arguments by 8
+  for (i; i < ogArgumentListMap.size(); ++i) {
+    ogArgumentListMap[i].convert(arg);
+
+    msgpack::object valueKindObject = arg[".value_kind"];
+    valueKindObject.convert(valueKind);
+
+    assert(startsWith("hidden", valueKind)); // Hidden arguments
+
+    int offset;
+    arg[".offset"].convert(offset);
+    arg[".offset"] = msgpack::object(offset + 8, z);
+
+    msgpack::object argObj = msgpack::object(arg, z);
+    newArgumentListMap.push_back(argObj);
+  }
+}
 
 void expand_args(const std::string &fileName,
                  std::vector<std::string> &instrumentedKernelNames) {
@@ -67,31 +137,14 @@ void expand_args(const std::string &fileName,
       continue;
 
     kernargListMap[".args"].convert(argumentListMap);
+    std::vector<msgpack::object> newArgumentListMap;
+    createNewArgumentList(argumentListMap, newArgumentListMap, z);
 
     uint32_t oldKernargSize = 0;
     kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
+    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
-    uint32_t newArgOffset = 98;
-    while(newArgOffset % 8) {
-      ++newArgOffset;
-    }
-
-    // Create a new argument, which is pointer to the dyninst's memory buffer for variables
-    std::map<std::string, msgpack::object> newArgument;
-    newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
-    newArgument[".address_space"] = msgpack::object(std::string("global"), z);
-    newArgument[".offset"] = msgpack::object(newArgOffset, z);
-    newArgument[".size"] = msgpack::object(8, z);
-    newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
-    newArgument[".access"] = msgpack::object(std::string("read_write"), z);
-    // newArgument[".is_const"] = msgpack::object(true, z); // the pointer can't change address
-    // newArgument[".is_restrict"] = msgpack::object(false, z); // keep it false to be safe
-    // newArgument[".is_volatile"] = msgpack::object(false, z); // keep it false to be safe
-    //
-    argumentListMap.push_back(msgpack::object(newArgument, z));
-    kernargListMap[".args"] = msgpack::object(argumentListMap, z);
-
-    uint32_t newKernargSize = 288;//newArgOffset + 8;
+    uint32_t newKernargSize = oldKernargSize + 8;
 
     kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
