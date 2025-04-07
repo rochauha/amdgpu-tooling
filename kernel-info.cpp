@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
       assert(newArgOffset != -1);
 
       std::cout << kd->getName() << ' '
-                << newArgOffset << ' '
+                // << newArgOffset << ' '
                 << kd->getKernargSize() << ' '
                 << getKernargPtrRegister(kd) << '\n';
     }
