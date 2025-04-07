@@ -13,6 +13,11 @@ static bool startsWith(const std::string &prefix, const std::string &str) {
   return str.substr(0, prefix.length()) == prefix;
 }
 
+struct KernelInfo {
+  std::string name;
+  unsigned kernargBufferSize;
+};
+
 // Create a new argument, which is pointer to the dyninst's memory buffer for
 // variables
 void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
@@ -27,7 +32,7 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
 
 void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
                            std::vector<msgpack::object> &newArgumentListMap,
-                           msgpack::zone &z) {
+                           unsigned kernargBufferSize, msgpack::zone &z) {
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
@@ -44,39 +49,18 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   // Now we are at the first hidden arg.
   assert(i < ogArgumentListMap.size() && startsWith("hidden", valueKind));
 
-  std::map<std::string, msgpack::object> hiddenArg;
-  ogArgumentListMap[i].convert(hiddenArg);
-
-  int hiddenArgSize;
-  hiddenArg[".size"].convert(hiddenArgSize);
-
-  int hiddenArgOffset;
-  hiddenArg[".offset"].convert(hiddenArgOffset);
-
   std::map<std::string, msgpack::object> newArg;
-  createNewArgument(newArg, hiddenArgOffset, z);
+  createNewArgument(newArg, kernargBufferSize, z);
   newArgumentListMap.push_back(msgpack::object(newArg, z));
 
-  // Increment offsets for all further arguments by 8
+  // Push other arguments
   for (i; i < ogArgumentListMap.size(); ++i) {
-    ogArgumentListMap[i].convert(arg);
-
-    msgpack::object valueKindObject = arg[".value_kind"];
-    valueKindObject.convert(valueKind);
-
-    assert(startsWith("hidden", valueKind)); // Hidden arguments
-
-    int offset;
-    arg[".offset"].convert(offset);
-    arg[".offset"] = msgpack::object(offset + 8, z);
-
-    msgpack::object argObj = msgpack::object(arg, z);
-    newArgumentListMap.push_back(argObj);
+    newArgumentListMap.push_back(ogArgumentListMap[i]);
   }
 }
 
 void expand_args(const std::string &fileName,
-                 std::vector<std::string> &instrumentedKernelNames) {
+                 std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::string newFileName = fileName + ".expanded";
 
   /*
@@ -131,25 +115,32 @@ void expand_args(const std::string &fileName,
     std::string kernelName = "";
     kernargListMap[".name"].convert(kernelName);
 
-    auto iter = std::find(instrumentedKernelNames.begin(),
-                          instrumentedKernelNames.end(), kernelName);
-    if (iter == instrumentedKernelNames.end())
+    // auto iter = std::find(instrumentedKernelInfos.begin(),
+    // instrumentedKernelInfos.end(), kernelName);
+    auto iter = std::find_if(
+        instrumentedKernelInfos.begin(), instrumentedKernelInfos.end(),
+        [&kernelName](const KernelInfo &KI) { return KI.name == kernelName; });
+
+    if (iter == instrumentedKernelInfos.end()) {
       continue;
+    }
 
     kernargListMap[".args"].convert(argumentListMap);
     std::vector<msgpack::object> newArgumentListMap;
-    createNewArgumentList(argumentListMap, newArgumentListMap, z);
+    createNewArgumentList(argumentListMap, newArgumentListMap,
+                          iter->kernargBufferSize, z);
+    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
     uint32_t oldKernargSize = 0;
     kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
-    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
+    assert(oldKernargSize % 8 == 0);
 
     uint32_t newKernargSize = oldKernargSize + 8;
 
     kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
-    // We also set spr_count to 102 (max count for gfx908)
-    kernargListMap[".sgpr_count"] = msgpack::object(102, z);
+    // We also set spr_count to 112 (max count for gfx908)
+    kernargListMap[".sgpr_count"] = msgpack::object(112, z);
 
     kernargList[k_list_i] = msgpack::object(kernargListMap, z);
   }
@@ -188,16 +179,19 @@ void expand_args(const std::string &fileName,
   outFile.close();
 }
 
-void readInstrumentedKernelNames(
+void readInstrumentedKernelInfos(
     const std::string &filePath,
-    std::vector<std::string> &instrumentedKernelNames) {
+    std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::ifstream file(filePath);
   std::string word;
 
   assert(file.is_open());
-  while (file >> word) {
-    instrumentedKernelNames.push_back(word);
+
+  KernelInfo kernelInfo;
+  while (file >> kernelInfo.name >> kernelInfo.kernargBufferSize) {
+    instrumentedKernelInfos.push_back(kernelInfo);
   }
+
   file.close();
 }
 
@@ -206,8 +200,8 @@ int main(int argc, char *argv[]) {
     printf("usage expand_args <.names file> <.note file>\n");
     return -1;
   }
-  std::vector<std::string> instrumentedKernelNames;
-  readInstrumentedKernelNames(argv[1], instrumentedKernelNames);
-  expand_args(argv[2], instrumentedKernelNames);
+  std::vector<KernelInfo> instrumentedKernelInfos;
+  readInstrumentedKernelInfos(argv[1], instrumentedKernelInfos);
+  expand_args(argv[2], instrumentedKernelInfos);
   return 0;
 }
