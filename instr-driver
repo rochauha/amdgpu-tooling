@@ -5,6 +5,9 @@
 MUTATOR=$1
 
 EXEC_IN=$2
+EXEC_UPDATED=$EXEC_IN.updated
+EXEC_RENAMED1=$EXEC_UPDATED.renamed1
+EXEC_RENAMED2=$EXEC_UPDATED.renamed2
 EXEC_OUT=$EXEC_IN.out
 
 FATBIN=$EXEC_IN.fatbin
@@ -66,5 +69,15 @@ update-fatbin gfx908 $GPUBIN_FINAL $FATBIN
 
 # 6. Update the original executable ($EXEC_IN) by embedding $FATBIN_UPDATED
 # This will emit $EXEC_OUT
-update-exec $EXEC_IN $FATBIN_UPDATED $EXEC_OUT
+update-exec $EXEC_IN $FATBIN_UPDATED $EXEC_UPDATED
+
+# 7. Rename fatbin sections so that roc-obj* tools work with the modified executable. Those tools specifically look for the .hip_fatbin section by name.
+# - Rename .hip_fatbin section to .old_fatbin
+# - Rename .new_fatbin section to .hip_fatbin
+# It is possible to do this within the update-exec tool, but doing it here is simpler and less error-prone
+llvm-objcopy --rename-section .hip_fatbin=.old_fatbin $EXEC_UPDATED $EXEC_RENAMED1
+llvm-objcopy --rename-section .new_fatbin=.hip_fatbin $EXEC_RENAMED1 $EXEC_RENAMED2
+
+cp $EXEC_RENAMED2 $EXEC_OUT
+
 chmod +x $EXEC_OUT
