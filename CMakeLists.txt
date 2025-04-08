@@ -85,6 +85,12 @@ target_include_directories(expand-args PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include
 )
 
+add_executable(update-note-phdr update-note-phdr.cpp)
+
+target_include_directories(update-note-phdr PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
+)
+
 add_executable(extract-fatbin extract-fatbin.cpp)
 
 target_include_directories(extract-fatbin PRIVATE
