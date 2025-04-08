@@ -102,8 +102,7 @@ static void modifyKDs(const char *filename,
         while(kernargSize % 8) {
           ++kernargSize;
         }
-        kd.setKernargSize(288);
-        // kd.setKernargSize(kernargSize + 8);
+        kd.setKernargSize(kernargSize + 8);
 
         kd.writeToMemory((uint8_t *)(buffer) + byteOffset);
       }
