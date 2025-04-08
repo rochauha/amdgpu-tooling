@@ -96,15 +96,18 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   assert(hip_ret == hipSuccess);
 
   // int oldKernargNum = 5;
-  int new_kernarg_vec_size = 288;
+  int new_kernarg_vec_size = 288 + 8;
   void **newArgs = (void **)malloc(new_kernarg_vec_size);
   std::cerr << "allocated newArgs\n";
-  memcpy(newArgs, args, 288);
+  memcpy(newArgs, args, 32);
 
   std::cerr << "copied oldArgs to newArgs\n";
 
-  newArgs[(104/8)] = (void *)(instrumentationDataDevice);
+  newArgs[32/8] = (void *)(instrumentationDataDevice);
   std::cerr << "set additional arg\n";
+
+  memcpy((char *)newArgs + 40, (char *)args + 32, 288-32);
+  std::cerr << "copied hidden args\n";
 
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
   hipDeviceSynchronize();
