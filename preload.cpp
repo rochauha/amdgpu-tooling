@@ -99,16 +99,28 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   int new_kernarg_vec_size = 288 + 8;
   void **newArgs = (void **)malloc(new_kernarg_vec_size);
   std::cerr << "allocated newArgs\n";
-  memcpy(newArgs, args, 32);
+  memcpy(newArgs, args, 40);
 
-  std::cerr << "copied oldArgs to newArgs\n";
 
-  newArgs[32/8] = (void *)(instrumentationDataDevice);
+  std::cout << "original args\n";
+  for (int i = 0; i < 40/8; ++i) {
+    std::cerr << args[i] << ' ' << std::hex << *((uint64_t *)args[i]) << '\n';
+  }
+
+
+  std::cerr << std::dec << "copied oldArgs to newArgs\n";
+
+  newArgs[40/8] = (void *)(&instrumentationDataDevice);
   std::cerr << "set additional arg\n";
 
-  memcpy((char *)newArgs + 40, (char *)args + 32, 288-32);
+  //memcpy((char *)newArgs + 40, (char *)args + 32, 288-32);
   std::cerr << "copied hidden args\n";
 
+  std::cout << "new args\n";
+  for (int i = 0; i < 48/8; ++i) {
+    std::cerr << newArgs[i] << ' ' << std::hex << *((uint64_t *)newArgs[i]) << '\n';
+  }
+  std::cerr << std::dec;
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
   hipDeviceSynchronize();
 
