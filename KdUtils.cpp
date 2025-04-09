@@ -31,15 +31,15 @@ bool isKernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol) {
 
   if (symbol->isInDynSymtab())
     return false;
-
-  bool c1 = symbol->getType() == Symbol::ST_OBJECT && symbol->getSize() == 64;
-
-  const Region *region = symbol->getRegion();
-  bool c2 = region->isData() && region->getRegionPermissions() == Region::RP_R;
-
-  if (c1 && c2 == false)
-    return false;
-
+  //
+  // bool c1 = symbol->getType() == Symbol::ST_OBJECT && symbol->getSize() == 64;
+  //
+  // const Region *region = symbol->getRegion();
+  // bool c2 = region->isData() && region->getRegionPermissions() == Region::RP_R;
+  //
+  // if (c1 && c2 == false)
+  //   return false;
+  //
   std::string suffix = ".kd";
   return endsWith(suffix, symbol->getMangledName());
 }
