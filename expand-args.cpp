@@ -28,6 +28,8 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
   newArgument[".size"] = msgpack::object(8, z);
   newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
   newArgument[".access"] = msgpack::object(std::string("read_write"), z);
+
+  std::cerr << "created new argument with offset = " << offset << '\n';
 }
 
 void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
@@ -52,6 +54,7 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   std::map<std::string, msgpack::object> newArg;
   createNewArgument(newArg, kernargBufferSize, z);
   newArgumentListMap.push_back(msgpack::object(newArg, z));
+  std::cerr << "added newArg to new list\n";
 
   // Push other arguments
   for (i; i < ogArgumentListMap.size(); ++i) {

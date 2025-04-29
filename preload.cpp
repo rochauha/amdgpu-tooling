@@ -83,6 +83,10 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   assert(realLaunch != 0);
 
   unsigned *instrumentationDataHost = (unsigned *)calloc(1, sizeof(unsigned));
+
+  std::cout << "allocated counter on host at" << instrumentationDataHost << '\n';
+  std::cout << "counter on host = " << instrumentationDataHost[0] << '\n';
+
   unsigned *instrumentationDataDevice;
 
   hipError_t hip_ret =
@@ -124,12 +128,15 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
   hipDeviceSynchronize();
 
-  std::cerr << "real launch done\n";
+  std::cout << "real launch done\n";
 
   hipStreamSynchronize(stream);
 
   hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ sizeof(unsigned),
             hipMemcpyDeviceToHost);
+
+  std::cout << "copied data back\n";
+  std::cout << "counter on host = ";
 
   std::cout << instrumentationDataHost[0] << '\n';
   return hipSuccess;

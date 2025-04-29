@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
 
   const char *gpuBinPath = argv[1];
   const char *newGpuBinPath = argv[2];
+  std::cerr << "saving file to " << newGpuBinPath << '\n';
 
   ELFIO::elfio gpuBin;
 
