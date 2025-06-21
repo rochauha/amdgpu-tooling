@@ -99,6 +99,9 @@ static void modifyKDs(const char *filename,
         kd.setCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount(newValue);
 
         uint32_t kernargSize = kd.getKernargSize();
+        while(kernargSize % 8) {
+          ++kernargSize;
+        }
         kd.setKernargSize(kernargSize + 8);
 
         kd.writeToMemory((uint8_t *)(buffer) + byteOffset);

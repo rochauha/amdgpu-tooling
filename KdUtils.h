@@ -1,6 +1,8 @@
 #ifndef KD_UTILS_H
 #define KD_UTILS_H
 
+#include "msgpack.hpp"
+
 #include "Symbol.h"
 
 #include "Elf_X.h"
@@ -25,9 +27,8 @@ void parseNoteMetadata(Dyninst::Elf_X_Shdr &sectionHeader);
 
 unsigned getKernargPtrRegister(KDPtr kd);
 
-int getKernargBufferSizeInternal(KDPtr kd, const char *sectionContents,
-                                 size_t length);
+int getFirstHiddenArgOffset(std::vector<msgpack::object> &argumentListMap);
 
-unsigned getKernargBufferSize(KDPtr kd, Dyninst::Elf_X_Shdr &sectionHeader);
+int getNewArgOffset(KDPtr kd, const char *sectionContents, size_t length);
 
 #endif

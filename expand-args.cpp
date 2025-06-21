@@ -4,9 +4,66 @@
 #include <msgpack.hpp>
 #include <sstream>
 #include <string>
+#include <vector>
+
+static bool startsWith(const std::string &prefix, const std::string &str) {
+  if (prefix.length() > str.length())
+    return false;
+
+  return str.substr(0, prefix.length()) == prefix;
+}
+
+struct KernelInfo {
+  std::string name;
+  unsigned kernargBufferSize;
+};
+
+// Create a new argument, which is pointer to the dyninst's memory buffer for
+// variables
+void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
+                       int offset, msgpack::zone &z) {
+  newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
+  newArgument[".address_space"] = msgpack::object(std::string("global"), z);
+  newArgument[".offset"] = msgpack::object(offset, z);
+  newArgument[".size"] = msgpack::object(8, z);
+  newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
+  newArgument[".access"] = msgpack::object(std::string("read_write"), z);
+
+  std::cerr << "created new argument with offset = " << offset << '\n';
+}
+
+void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
+                           std::vector<msgpack::object> &newArgumentListMap,
+                           unsigned kernargBufferSize, msgpack::zone &z) {
+  std::map<std::string, msgpack::object> arg;
+  std::string valueKind;
+  int i = 0;
+  for (i; i < ogArgumentListMap.size(); ++i) {
+    ogArgumentListMap[i].convert(arg);
+    msgpack::object valueKindObject = arg[".value_kind"];
+    valueKindObject.convert(valueKind);
+    if (startsWith("hidden", valueKind)) {
+      break;
+    }
+    newArgumentListMap.push_back(ogArgumentListMap[i]);
+  }
+
+  // Now we are at the first hidden arg.
+  assert(i < ogArgumentListMap.size() && startsWith("hidden", valueKind));
+
+  std::map<std::string, msgpack::object> newArg;
+  createNewArgument(newArg, kernargBufferSize, z);
+  newArgumentListMap.push_back(msgpack::object(newArg, z));
+  std::cerr << "added newArg to new list\n";
+
+  // Push other arguments
+  for (i; i < ogArgumentListMap.size(); ++i) {
+    newArgumentListMap.push_back(ogArgumentListMap[i]);
+  }
+}
 
 void expand_args(const std::string &fileName,
-                 std::vector<std::string> &instrumentedKernelNames) {
+                 std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::string newFileName = fileName + ".expanded";
 
   /*
@@ -61,36 +118,32 @@ void expand_args(const std::string &fileName,
     std::string kernelName = "";
     kernargListMap[".name"].convert(kernelName);
 
-    auto iter = std::find(instrumentedKernelNames.begin(),
-                          instrumentedKernelNames.end(), kernelName);
-    if (iter == instrumentedKernelNames.end())
+    // auto iter = std::find(instrumentedKernelInfos.begin(),
+    // instrumentedKernelInfos.end(), kernelName);
+    auto iter = std::find_if(
+        instrumentedKernelInfos.begin(), instrumentedKernelInfos.end(),
+        [&kernelName](const KernelInfo &KI) { return KI.name == kernelName; });
+
+    if (iter == instrumentedKernelInfos.end()) {
       continue;
+    }
 
     kernargListMap[".args"].convert(argumentListMap);
+    std::vector<msgpack::object> newArgumentListMap;
+    createNewArgumentList(argumentListMap, newArgumentListMap,
+                          iter->kernargBufferSize, z);
+    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
     uint32_t oldKernargSize = 0;
     kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
-
-    // Create a new argument, which is pointer to the dyninst's memory buffer for variables
-    std::map<std::string, msgpack::object> newArgument;
-    newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
-    newArgument[".address_space"] = msgpack::object(std::string("global"), z);
-    newArgument[".offset"] = msgpack::object(oldKernargSize, z);
-    newArgument[".size"] = msgpack::object(8, z);
-    newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
-    newArgument[".actual_access"] = msgpack::object(std::string("read_write"), z);
-    newArgument[".is_const"] = msgpack::object(true, z); // the pointer can't change address
-    newArgument[".is_restrict"] = msgpack::object(false, z); // keep it false to be safe
-    newArgument[".is_volatile"] = msgpack::object(false, z); // keep it false to be safe
-
-    argumentListMap.push_back(msgpack::object(newArgument, z));
-    kernargListMap[".args"] = msgpack::object(argumentListMap, z);
+    assert(oldKernargSize % 8 == 0);
 
     uint32_t newKernargSize = oldKernargSize + 8;
+
     kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
-    // We also set spr_count to 102 (max count for gfx908)
-    kernargListMap[".sgpr_count"] = msgpack::object(102, z);
+    // We also set spr_count to 112 (max count for gfx908)
+    kernargListMap[".sgpr_count"] = msgpack::object(112, z);
 
     kernargList[k_list_i] = msgpack::object(kernargListMap, z);
   }
@@ -129,16 +182,19 @@ void expand_args(const std::string &fileName,
   outFile.close();
 }
 
-void readInstrumentedKernelNames(
+void readInstrumentedKernelInfos(
     const std::string &filePath,
-    std::vector<std::string> &instrumentedKernelNames) {
+    std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::ifstream file(filePath);
   std::string word;
 
   assert(file.is_open());
-  while (file >> word) {
-    instrumentedKernelNames.push_back(word);
+
+  KernelInfo kernelInfo;
+  while (file >> kernelInfo.name >> kernelInfo.kernargBufferSize) {
+    instrumentedKernelInfos.push_back(kernelInfo);
   }
+
   file.close();
 }
 
@@ -147,8 +203,8 @@ int main(int argc, char *argv[]) {
     printf("usage expand_args <.names file> <.note file>\n");
     return -1;
   }
-  std::vector<std::string> instrumentedKernelNames;
-  readInstrumentedKernelNames(argv[1], instrumentedKernelNames);
-  expand_args(argv[2], instrumentedKernelNames);
+  std::vector<KernelInfo> instrumentedKernelInfos;
+  readInstrumentedKernelInfos(argv[1], instrumentedKernelInfos);
+  expand_args(argv[2], instrumentedKernelInfos);
   return 0;
 }

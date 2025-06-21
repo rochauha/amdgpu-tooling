@@ -18,7 +18,13 @@ using namespace SymtabAPI;
 // KernelName KernargBufferSize KernargPtrRegister
 
 int main(int argc, char **argv) {
-  assert(argc == 2);
+  bool dumpKd = false;
+  if (argc == 3) {
+    assert(std::string(argv[2]) == "-kd");
+    dumpKd = true;
+  } else {
+    assert(argc == 2);
+  }
 
   std::string filePath(argv[1]);
   std::ifstream inputFile(filePath);
@@ -61,9 +67,17 @@ int main(int argc, char **argv) {
   for (const Symbol *symbol : symbols) {
     if (isKernelDescriptor(symbol)) {
       KDPtr kd = std::make_shared<KernelDescriptor>(symbol, elfHeader);
-      std::cout << kd->getName() << ' '
-                << getKernargBufferSize(kd, *noteSectionHeader) << ' '
+      // int newArgOffset = getNewArgOffset(kd, noteSectionHeader->get_data().get_string(), noteSectionHeader->sh_size());
+      // assert(newArgOffset != -1);
+
+      if (dumpKd) {
+        kd->dumpDetailed(std::cout);
+      } else {
+        std::cout << kd->getName() << ' '
+                // << newArgOffset << ' '
+                << kd->getKernargSize() << ' '
                 << getKernargPtrRegister(kd) << '\n';
+      }
     }
   }
 }
