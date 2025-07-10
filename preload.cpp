@@ -25,19 +25,21 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   unsigned *instrumentationDataHost = (unsigned *)calloc(1, allocSize);
 
-  std::cerr << "allocated counter on host at" << instrumentationDataHost << '\n';
-  std::cerr << "counters on host = " << '\n';
+  // std::cerr << "allocated counter on host at " << instrumentationDataHost << '\n';
+  std::cerr << '\n';
+  std::cerr << "counters on host : " << '\n';
 
   for (unsigned i = 0; i < numCounters; ++i) {
-    std::cerr << "counter " << i << ' ' << instrumentationDataHost[i] << '\n';
+    std::cerr << "counter_" << i << " = " << instrumentationDataHost[i] << '\n';
   }
+  std::cerr << '\n';
 
   unsigned *instrumentationDataDevice;
 
   hipError_t hip_ret =
       hipMalloc((void **)&instrumentationDataDevice, allocSize);
   assert(hip_ret == hipSuccess);
-  std::cerr << "allocated additional memory\n";
+  // std::cerr << "allocated additional memory\n";
 
   hip_ret = hipMemset(instrumentationDataDevice, 0, allocSize);
 
@@ -46,29 +48,29 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   // int oldKernargNum = 5;
   int new_kernarg_vec_size = 288 + 8;
   void **newArgs = (void **)malloc(new_kernarg_vec_size);
-  std::cerr << "allocated newArgs\n";
-  memcpy(newArgs, args, 32);
+  // std::cerr << "allocated newArgs\n";
+  memcpy(newArgs, args, 40);
 
 
-  std::cerr << "original args\n";
-  for (int i = 0; i < 32/8; ++i) {
-    std::cerr << args[i] << ' ' << std::hex << *((uint64_t *)args[i]) << '\n';
-  }
+  // std::cerr << "original args\n";
+  // for (int i = 0; i < 40/8; ++i) {
+  //   std::cerr << args[i] << ' ' << std::hex << *((uint64_t *)args[i]) << '\n';
+  // }
 
 
-  std::cerr << std::dec << "copied oldArgs to newArgs\n";
+  // std::cerr << std::dec << "copied oldArgs to newArgs\n";
 
-  newArgs[32/8] = (void *)(&instrumentationDataDevice);
-  std::cerr << "set additional arg\n";
+  newArgs[40/8] = (void *)(&instrumentationDataDevice);
+  // std::cerr << "set additional arg\n";
 
-  //memcpy((char *)newArgs + 40, (char *)args + 32, 288-32);
-  std::cerr << "copied hidden args\n";
+  //memcpy((char *)newArgs + 48, (char *)args + 40, 288-40);
+  // std::cerr << "copied hidden args\n";
 
-  std::cerr << "new args\n";
-  for (int i = 0; i < 40/8; ++i) {
-    std::cerr << newArgs[i] << ' ' << std::hex << *((uint64_t *)newArgs[i]) << '\n';
-  }
-  std::cerr << std::dec;
+  // std::cerr << "new args\n";
+  // for (int i = 0; i < 48/8; ++i) {
+  //   std::cerr << newArgs[i] << ' ' << std::hex << *((uint64_t *)newArgs[i]) << '\n';
+  // }
+  // std::cerr << std::dec;
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
   hipDeviceSynchronize();
 
@@ -80,11 +82,14 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
             hipMemcpyDeviceToHost);
 
   std::cerr << "copied data back\n";
-  std::cerr << "counters on host = \n";
+
+  std::cerr << '\n';
+  std::cerr << "counters on host : \n";
 
   for (unsigned i = 0; i < numCounters; ++i) {
-    std::cerr << "counter " << i << ' ' << instrumentationDataHost[i] << '\n';
+    std::cerr << "counter_" << i << " = " << instrumentationDataHost[i] << '\n';
   }
+  std::cerr << '\n';
   return hipSuccess;
 }
 

@@ -40,7 +40,8 @@ kernel-info $GPUBIN > $INFOS_FILE
 
 # 4. Run the mutator, instrument kernels (also use the information from step 3).
 # This will also emit a file containing list of instrumented kernels ($NAMES_FILE)
-$MUTATOR -procedure-count $GPUBIN
+# $MUTATOR -procedure-count $GPUBIN
+$MUTATOR  $GPUBIN
 
 # 5. Update kernel descriptors for instrumented kernels
 # This will produce $GPUBIN_UPDATED
