@@ -9,6 +9,11 @@
 
 // NOTE : This currently only considers GFX908
 
+void showHelp(const std::string& toolName) {
+  std::cout << "Usage : \n";
+  std::cout << toolName << " <namesFile> " << "<ELF file>" << std::endl;
+}
+
 static void modifyKDs(const char *filename,
                       const std::vector<std::string> &kernelNames) {
   std::ifstream file(filename, std::ios::in | std::ios::binary);
@@ -131,15 +136,13 @@ readInstrumentedKernelNames(const std::string &filePath,
 
 int main(int argc, char **argv) {
   if (argc != 3) {
-    std::cerr << "Usage: " << argv[0] << " <namesFile> <ELF file>"
-              << std::endl;
-    return 1;
+    std::cout << "exactly 2 arguments to " << argv[0] << " expected\n";
+    showHelp(argv[0]);
+    exit(1);
   }
 
   std::vector<std::string> instrumentedKernelNames;
   readInstrumentedKernelNames(argv[1], instrumentedKernelNames);
 
   modifyKDs(argv[2], instrumentedKernelNames);
-
-  return 0;
 }
