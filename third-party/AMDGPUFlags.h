@@ -1,7 +1,16 @@
+//===----------------------------------------------------------------------===//
+//
+// This file contains a copy of the e_flags struct definition from
+// llvm/include/llvm/BinaryFormat/ELF.h
+//
+// This file is also under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
 #ifndef AMDGPU_FLAGS_H
 #define AMDGPU_FLAGS_H
-
-// These values are copied as-is from llvm/BinaryFormat/ELF.h
 
 enum : unsigned {
   // Processor selection mask for EF_AMDGPU_MACH_* values.
