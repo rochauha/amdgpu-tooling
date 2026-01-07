@@ -9,6 +9,35 @@
 #include <vector>
 #include <unordered_map>
 
+// Environment variable for the instrumentation variable table path:
+const char *instrumentationVariableTableEnv = "DYNINST_AMDGPU_INSTRUMENTATON_VAR_TABLE";
+
+// Environment variable for the instrumented kernel names path:
+const char *instrumentedKernelNamesEnv = "DYNINST_AMDGPU_INSTRUMENTED_KERNEL_NAMES";
+
+// This will be used to print the names and values of the instrumentation variables after the kernel launch is done and the instrumentation variables are copied back.
+struct InstrumentationVarTableEntry {
+  int offset;
+  std::string name;
+  // TODO : This needs a size field too
+
+  InstrumentationVarTableEntry(std::vector<std::string> words) {
+    assert(words.size() == 2);
+    offset = std::stoi(words[0]);
+    name = words[1];
+  }
+};
+
+std::unordered_map<std::string, int> &getKernargSizeMap() {
+  static std::unordered_map<std::string, int> instance;
+  return instance;
+}
+
+std::vector<InstrumentationVarTableEntry> &getInstrumentationVarTableEntries() {
+  static std::vector<InstrumentationVarTableEntry> instance;
+  return instance;
+}
+
 // Read words from a string
 void getWords(const std::string &str, std::vector<std::string> &words) {
   std::stringstream ss(str);
@@ -18,24 +47,12 @@ void getWords(const std::string &str, std::vector<std::string> &words) {
   }
 }
 
-// ===== Instrumentation Variable Table begin =====
 // The code here is to retrieve the map :
 //  offset -> instrumentation variable name
-//
-// This will be used to print the names and values of the instrumentation variables after the kernel launch is done and the instrumentation variables are copied back.
-struct InstrumentationVarTableEntry {
-  int offset;
-  std::string name;
-
-  InstrumentationVarTableEntry(std::vector<std::string> words) {
-    assert(words.size() == 2);
-    offset = std::stoi(words[0]);
-    name = words[1];
-  }
-};
 
 // The table is sorted by offset
-void readInstrumentedVarTable(const std::string& filePath, std::vector<InstrumentationVarTableEntry> &tableEntries) {
+void readInstrumentedVarTable(const std::string &filePath) {
+  auto &tableEntries = getInstrumentationVarTableEntries();
   std::ifstream tableFile(filePath);
   std::string line;
 
@@ -53,23 +70,14 @@ void readInstrumentedVarTable(const std::string& filePath, std::vector<Instrumen
   tableFile.close();
 }
 
-// Environment variable for the instrumentation variable table path:
-const char *instrumentationVariableTableEnv = "DYNINST_AMDGPU_INSTRUMENTATON_VAR_TABLE";
-
-static std::vector<InstrumentationVarTableEntry> instrumentationVarTableEntries;
-// ==== Instrumentation Variable Table end ====
-
-
-// ==== Kernarg Size Map begin ====
-//
 // This is used to retrieve the map :
 //   kernelName -> kernargBufferSize
 //
 // We extend the kernel signature to take an additional argument, which is the memory holding instrumentation variables.
 // The map will be used to update the kernarg signature with a bigger kernarg buffer size, to accomodate for the additional argument.
-void readKernargSizeMap(const std::string &filePath,
-    std::unordered_map<std::string, int> &theMap) {
-
+void readKernargSizeMap(const std::string &filePath) {
+  auto &theMap = getKernargSizeMap();
+  std::cerr << "readKernargSizeMap : reading " << filePath << "\n";
   std::ifstream mapFile(filePath);
   std::string line;
 
@@ -88,22 +96,13 @@ void readKernargSizeMap(const std::string &filePath,
     std::cerr << words.size() << '\n';
     assert(words.size() == 2); // (<kernel name> <kernarg size>)
 
-    std::cerr << words[0] << ' ' << words[1] << '\n';
     std::string kernelName = words[0];
-    // theMap["test"] = 0;
     int kernargSize = std::stoi(words[1]);
-
-    // theMap[kernelName] = 0;
+    theMap[kernelName] = kernargSize;
     words.clear();
   }
   mapFile.close();
 }
-
-// Environment variable for the instrumented kernel names path:
-const char *instrumentedKernelNamesEnv = "DYNINST_AMDGPU_INSTRUMENTED_KERNEL_NAMES";
-
-std::unordered_map<std::string, int> kernargSizeMap;
-// ==== Kernarg Size Map end
 
 typedef void (*registerFunc_t ) (
     void** modules,
@@ -153,62 +152,64 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
                                       size_t sharedMemBytes,
                                       hipStream_t stream) {
 
-  unsigned numCounters = 3;
-  size_t allocSize = sizeof(unsigned) * numCounters;
+  auto &kernargSizeMap = getKernargSizeMap();
+  auto &instrumentationVarTableEntries = getInstrumentationVarTableEntries();
+
+  // Step 0. Get kernel name
+  auto iter = addressToKernelName.find(hostFunction);
+  if (iter == addressToKernelName.end()) {
+    std::cerr << "ERROR : kernel being launched wasn't registered by hipRegisterFunction\n";
+    exit(1);
+  }
+  std::string kernelName = iter->second;
+
+  // Step 1. Check whether this is an instrumented kernel, i.e it should be in kernargSizeMapPath
+  auto it = kernargSizeMap.find(kernelName);
+  if (it == kernargSizeMap.end()) {
+    // do regular launch
+    std::cerr << "kernel not in kernargsizemap!\n";
+    exit(1);
+    return hipSuccess;
+  }
+
+  int kernargSize = it->second;
+
   if (realLaunch == 0) {
     realLaunch = (launch_t)dlsym(RTLD_NEXT, "hipLaunchKernel");
   }
 
   assert(realLaunch != 0);
 
+  // Step 2. Get size of instrumentation memory
+  assert(!instrumentationVarTableEntries.empty());
+  InstrumentationVarTableEntry lastEntry = *(instrumentationVarTableEntries.end() - 1);
+  size_t allocSize = lastEntry.offset + 4;
   unsigned *instrumentationDataHost = (unsigned *)calloc(1, allocSize);
 
-  // std::cerr << "allocated counter on host at " << instrumentationDataHost << '\n';
   std::cerr << '\n';
-  std::cerr << "counters on host : " << '\n';
-
-  for (unsigned i = 0; i < numCounters; ++i) {
-    std::cerr << "counter_" << i << " = " << instrumentationDataHost[i] << '\n';
+  std::cerr << "variables on host : " << '\n';
+  for (auto entry : instrumentationVarTableEntries) {
+    std::cerr << entry.name << " = " << instrumentationDataHost[entry.offset / 4] << '\n';
   }
-  std::cerr << '\n';
 
   unsigned *instrumentationDataDevice;
 
   hipError_t hip_ret =
       hipMalloc((void **)&instrumentationDataDevice, allocSize);
   assert(hip_ret == hipSuccess);
-  // std::cerr << "allocated additional memory\n";
 
   hip_ret = hipMemset(instrumentationDataDevice, 0, allocSize);
 
   assert(hip_ret == hipSuccess);
 
-  // int oldKernargNum = 5;
-  int new_kernarg_vec_size = 288 + 8;
+  int new_kernarg_vec_size = kernargSize + 8;
   void **newArgs = (void **)malloc(new_kernarg_vec_size);
-  // std::cerr << "allocated newArgs\n";
-  memcpy(newArgs, args, 40);
 
-
-  // std::cerr << "original args\n";
-  // for (int i = 0; i < 40/8; ++i) {
-  //   std::cerr << args[i] << ' ' << std::hex << *((uint64_t *)args[i]) << '\n';
-  // }
-
-
+  memcpy(newArgs, args, kernargSize);
   // std::cerr << std::dec << "copied oldArgs to newArgs\n";
 
+  // Get rid of this 40! -- need to read metadata, or get some information somehow.
   newArgs[40/8] = (void *)(&instrumentationDataDevice);
-  // std::cerr << "set additional arg\n";
-
-  //memcpy((char *)newArgs + 48, (char *)args + 40, 288-40);
-  // std::cerr << "copied hidden args\n";
-
-  // std::cerr << "new args\n";
-  // for (int i = 0; i < 48/8; ++i) {
-  //   std::cerr << newArgs[i] << ' ' << std::hex << *((uint64_t *)newArgs[i]) << '\n';
-  // }
-  // std::cerr << std::dec;
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
   hipDeviceSynchronize();
 
@@ -223,9 +224,8 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   std::cerr << '\n';
   std::cerr << "counters on host : \n";
-
-  for (unsigned i = 0; i < numCounters; ++i) {
-    std::cerr << "counter_" << i << " = " << instrumentationDataHost[i] << '\n';
+  for (auto entry : instrumentationVarTableEntries) {
+    std::cerr << entry.name << " = " << instrumentationDataHost[entry.offset / 4] << '\n';
   }
   std::cerr << '\n';
   return hipSuccess;
@@ -239,13 +239,14 @@ __attribute__((constructor)) void setup(void) {
     std::cerr << "LD_PRELOAD setup: " << instrumentedKernelNamesEnv << " not defined\n";
     exit(1);
   }
-  readKernargSizeMap(kernargSizeMapPath, kernargSizeMap);
+
+  readKernargSizeMap(kernargSizeMapPath);
 
   const char *tableFilePath = getenv(instrumentationVariableTableEnv);
   if (!tableFilePath) {
     std::cerr << "LD_PRELOAD setup: " << instrumentationVariableTableEnv << " not defined\n";
     exit(1);
   }
-  // readInstrumentedVarTable(tableFilePath, instrumentationVarTableEntries);
+  readInstrumentedVarTable(tableFilePath);
 }
 
