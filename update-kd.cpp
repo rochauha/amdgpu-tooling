@@ -1,21 +1,21 @@
 #include "KernelDescriptor.h"
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <elf.h>
 #include <fstream>
 #include <iostream>
 #include <vector>
-#include <algorithm>
 
 // NOTE : This currently only considers GFX908
 
-void showHelp(const std::string& toolName) {
+void showHelp(const std::string &toolName) {
   std::cout << "Usage : \n";
-  std::cout << toolName << " <namesFile> " << "<ELF file>" << std::endl;
+  std::cout << toolName << " <namesFile> "
+            << "<ELF file>" << std::endl;
 }
 
-static void modifyKDs(const char *filename,
-                      const std::vector<std::string> &kernelNames) {
+static void modifyKDs(const char *filename, const std::vector<std::string> &kernelNames) {
   std::ifstream file(filename, std::ios::in | std::ios::binary);
   if (!file.is_open()) {
     std::cerr << "ERROR opening the file\n";
@@ -97,14 +97,14 @@ static void modifyKDs(const char *filename,
       if (std::strcmp(symbolName, kdName.c_str()) == 0) {
         std::cout << "Modifying symbol: " << symbolName << "\n";
 
-        size_t byteOffset = symbol.st_value; //rodataSection->sh_offset + symbol.st_value;
+        size_t byteOffset = symbol.st_value; // rodataSection->sh_offset + symbol.st_value;
         KernelDescriptor kd((uint8_t *)(buffer + byteOffset), 64);
 
         uint32_t newValue = 2 * ((112 / 16) - 1); // Set SGPRs to 112 (max value)
         kd.setCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount(newValue);
 
         uint32_t kernargSize = kd.getKernargSize();
-        while(kernargSize % 8) {
+        while (kernargSize % 8) {
           ++kernargSize;
         }
         kd.setKernargSize(kernargSize + 8);
@@ -114,16 +114,14 @@ static void modifyKDs(const char *filename,
     }
   }
 
-  std::ofstream outputFile(std::string(filename) + ".updated",
-                           std::ios::out | std::ios::binary);
+  std::ofstream outputFile(std::string(filename) + ".updated", std::ios::out | std::ios::binary);
   // Write back modified buffer to file
   outputFile.write(buffer, length);
   outputFile.close();
 }
 
-static void
-readInstrumentedKernelNames(const std::string &filePath,
-                            std::vector<std::string> &instrumentedKernelNames) {
+static void readInstrumentedKernelNames(const std::string &filePath,
+                                        std::vector<std::string> &instrumentedKernelNames) {
   std::ifstream file(filePath);
   std::string word;
 

@@ -20,15 +20,11 @@ std::unordered_map<ELFIO::section *, ELFIO::section *> newToOgSectionMap;
 static void showHelp(const char *toolName) {
   std::cout << "usage : \n";
   std::cout << "  ";
-  std::cout << toolName
-            << " <og-exec> <fatbin> <new-exec> \n\n";
-  std::cout
-      << toolName
-      << " will emit <new-exec> containing the <fatbin>\n";
+  std::cout << toolName << " <og-exec> <fatbin> <new-exec> \n\n";
+  std::cout << toolName << " will emit <new-exec> containing the <fatbin>\n";
 }
 
-static void dumpSection(const ELFIO::section *section,
-                        bool printContents = true) {
+static void dumpSection(const ELFIO::section *section, bool printContents = true) {
   assert(section && "section must be non-null");
 
   std::cout << "section : " << section->get_name() << ", ";
@@ -51,8 +47,7 @@ static void dumpSection(const ELFIO::section *section,
 
 // === SECTION-GETTING HELPERS BEGIN ===
 //
-ELFIO::section *getSection(const std::string &sectionName,
-                           const ELFIO::elfio &file) {
+ELFIO::section *getSection(const std::string &sectionName, const ELFIO::elfio &file) {
   for (int i = 0; i < file.sections.size(); ++i) {
     if (file.sections[i]->get_name() == sectionName)
       return file.sections[i];
@@ -70,7 +65,7 @@ ELFIO::section *getFatbinWrapperSection(const ELFIO::elfio &file) {
 //
 // === SECTION-GETTING HELPERS END ===
 
-static size_t getFileSize(const std::string& filePath) {
+static size_t getFileSize(const std::string &filePath) {
   std::ifstream file(filePath);
   assert(file.is_open());
 
@@ -243,8 +238,7 @@ void cloneSegments(const ELFIO::elfio &ogExec, ELFIO::elfio &newExec) {
       auto newSegmentBegin = newSegments[j]->get_virtual_address();
       auto newSegmentSize = newSegments[j]->get_memory_size();
       auto newSegmentEnd = newSegmentBegin + newSegmentSize;
-      bool c1 = currSectionBegin >= newSegmentBegin &&
-                currSectionBegin < newSegmentEnd;
+      bool c1 = currSectionBegin >= newSegmentBegin && currSectionBegin < newSegmentEnd;
       bool c2 = currSectionEnd <= newSegmentEnd;
       if (c1 && c2) {
         newSegments[j]->add_section(currSection, 1);
@@ -270,16 +264,14 @@ void updateFatbinAddr(ELFIO::elfio &execFile, uint64_t newAddr) {
 
 // Create a .new_fatbin section, map it to a new PT_LOAD segment, update the
 // fatbin wrapper.
-void addNewFatbin(ELFIO::elfio &newExec, const char *newFatbinContent,
-                  size_t newFatbinSize) {
+void addNewFatbin(ELFIO::elfio &newExec, const char *newFatbinContent, size_t newFatbinSize) {
 
   ELFIO::section *fatbinSection = getFatbinSection(newExec);
   assert(fatbinSection);
 
   // Calculate next virtual address for loading the new fatbin.
   ELFIO::segment *lastSegment = getLastSegment(newExec);
-  size_t nextAddr =
-      lastSegment->get_virtual_address() + lastSegment->get_memory_size();
+  size_t nextAddr = lastSegment->get_virtual_address() + lastSegment->get_memory_size();
 
   size_t alignment = fatbinSection->get_addr_align();
   assert(alignment != 0);
@@ -331,14 +323,12 @@ void patchExec(const char *rwExecPath) {
   char *pHdrs = (char *)phdrSeg->get_data();
 
   size_t numZeroes = 0;
-  for (size_t i = 0; i < ptLoad1->get_memory_size() && ptLoad1Data[i] == 0;
-       ++i) {
+  for (size_t i = 0; i < ptLoad1->get_memory_size() && ptLoad1Data[i] == 0; ++i) {
     ++numZeroes;
   }
 
   if (numZeroes < phdrSeg->get_memory_size()) {
-    std::cout
-        << "can't patch final executable, please explicitly use ld to run it\n";
+    std::cout << "can't patch final executable, please explicitly use ld to run it\n";
     exit(1);
   }
 
@@ -414,13 +404,11 @@ int main(int argc, char **argv) {
 
   ELFIO::section *fatbinWrapperSection = getFatbinWrapperSection(execFile);
   if (!fatbinWrapperSection) {
-    std::cout << ".hipFatBinSegment section not found in " << execFilePath
-              << "\n";
+    std::cout << ".hipFatBinSegment section not found in " << execFilePath << "\n";
     exit(1);
   }
 
   cloneExec(execFile, newExecFile);
-
 
   size_t newFatbinSize = getFileSize(newFatbinPath);
   char *newFatbinContent = new char[newFatbinSize];

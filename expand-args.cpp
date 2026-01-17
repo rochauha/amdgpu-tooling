@@ -21,8 +21,8 @@ struct KernelInfo {
 
 // Create a new argument, which is pointer to the dyninst's memory buffer for
 // variables
-void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
-                       int offset, msgpack::zone &z) {
+void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int offset,
+                       msgpack::zone &z) {
   newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
   newArgument[".address_space"] = msgpack::object(std::string("global"), z);
   newArgument[".offset"] = msgpack::object(offset, z);
@@ -35,7 +35,7 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
 
 void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
                            std::vector<msgpack::object> &newArgumentListMap,
-                           unsigned kernargBufferSize, msgpack::zone &z, KernelInfo& kernelInfo) {
+                           unsigned kernargBufferSize, msgpack::zone &z, KernelInfo &kernelInfo) {
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
@@ -64,8 +64,7 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   }
 }
 
-void expand_args(const std::string &fileName,
-                 std::vector<KernelInfo> &instrumentedKernelInfos) {
+void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::string newFileName = fileName + ".expanded";
 
   /*
@@ -122,9 +121,8 @@ void expand_args(const std::string &fileName,
 
     // auto iter = std::find(instrumentedKernelInfos.begin(),
     // instrumentedKernelInfos.end(), kernelName);
-    auto iter = std::find_if(
-        instrumentedKernelInfos.begin(), instrumentedKernelInfos.end(),
-        [&kernelName](const KernelInfo &KI) { return KI.name == kernelName; });
+    auto iter = std::find_if(instrumentedKernelInfos.begin(), instrumentedKernelInfos.end(),
+                             [&kernelName](const KernelInfo &KI) { return KI.name == kernelName; });
 
     if (iter == instrumentedKernelInfos.end()) {
       continue;
@@ -132,8 +130,7 @@ void expand_args(const std::string &fileName,
 
     kernargListMap[".args"].convert(argumentListMap);
     std::vector<msgpack::object> newArgumentListMap;
-    createNewArgumentList(argumentListMap, newArgumentListMap,
-                          iter->kernargBufferSize, z, *iter);
+    createNewArgumentList(argumentListMap, newArgumentListMap, iter->kernargBufferSize, z, *iter);
     kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
     uint32_t oldKernargSize = 0;
@@ -184,9 +181,8 @@ void expand_args(const std::string &fileName,
   outFile.close();
 }
 
-void readInstrumentedKernelInfos(
-    const std::string &filePath,
-    std::vector<KernelInfo> &instrumentedKernelInfos) {
+void readInstrumentedKernelInfos(const std::string &filePath,
+                                 std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::ifstream file(filePath);
   std::string word;
 
@@ -200,14 +196,14 @@ void readInstrumentedKernelInfos(
   file.close();
 }
 
-void writeUpdatedKernelInfos(
-    const std::string &filePath,
-    std::vector<KernelInfo> &instrumentedKernelInfos) {
+void writeUpdatedKernelInfos(const std::string &filePath,
+                             std::vector<KernelInfo> &instrumentedKernelInfos) {
   std::ofstream file(filePath);
   assert(file.is_open());
 
   for (auto const kernelInfo : instrumentedKernelInfos) {
-    file << kernelInfo.name << ' ' << kernelInfo.kernargBufferSize << ' ' << kernelInfo.firstHiddenArgIndex << '\n';
+    file << kernelInfo.name << ' ' << kernelInfo.kernargBufferSize << ' '
+         << kernelInfo.firstHiddenArgIndex << '\n';
   }
   file.close();
 }

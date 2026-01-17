@@ -4,8 +4,7 @@
 
 #include "elfio/elfio.hpp"
 
-static ELFIO::section *getSection(const std::string &sectionName,
-                                  const ELFIO::elfio &file) {
+static ELFIO::section *getSection(const std::string &sectionName, const ELFIO::elfio &file) {
   for (int i = 0; i < file.sections.size(); ++i) {
     if (file.sections[i]->get_name() == sectionName)
       return file.sections[i];
@@ -19,8 +18,7 @@ static ELFIO::section *getFatbinSection(const ELFIO::elfio &file) {
 
 int main(int argc, char **argv) {
   if (argc != 2) {
-    std::cerr << "Usage: " << argv[0] << " <executable file with fatbin>"
-              << std::endl;
+    std::cerr << "Usage: " << argv[0] << " <executable file with fatbin>" << std::endl;
     return 1;
   }
 
@@ -37,8 +35,7 @@ int main(int argc, char **argv) {
   }
 
   // Write fatbin to a separate file
-  std::ofstream fatbinFile(std::string(argv[1]) + ".fatbin",
-                           std::ios::out | std::ios::binary);
+  std::ofstream fatbinFile(std::string(argv[1]) + ".fatbin", std::ios::out | std::ios::binary);
 
   fatbinFile.write(fatbinSection->get_data(), fatbinSection->get_size());
   fatbinFile.close();

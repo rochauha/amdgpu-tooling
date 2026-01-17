@@ -3,12 +3,11 @@
 #include <iostream>
 #include <string>
 
-
-void showHelp(const std::string& toolName) {
-  std::cerr << "Usage : " << toolName << " <arch-name> " << "<path-to-fatbin>" << std::endl;
+void showHelp(const std::string &toolName) {
+  std::cerr << "Usage : " << toolName << " <arch-name> "
+            << "<path-to-fatbin>" << std::endl;
   std::cerr << "supported architectures : gfx900, gfx906, gfx908, gfx90a, gfx940" << std::endl;
 }
-
 
 int main(int argc, char *argv[]) {
   if (argc != 3) {
@@ -32,8 +31,7 @@ int main(int argc, char *argv[]) {
   assert(std::string(buffer) == "__CLANG_OFFLOAD_BUNDLE__");
 
   uint64_t numBundleEntries = 0;
-  fatbin.read(reinterpret_cast<char *>(&numBundleEntries),
-                sizeof(numBundleEntries));
+  fatbin.read(reinterpret_cast<char *>(&numBundleEntries), sizeof(numBundleEntries));
 
   uint64_t elfStart = 0;
   uint64_t elfSize = 0;
@@ -43,7 +41,7 @@ int main(int argc, char *argv[]) {
   while (numBundleEntries) {
     uint64_t bundleEntryCodeObjectOffset; // offset from begining of the fatbin
     fatbin.read(reinterpret_cast<char *>(&bundleEntryCodeObjectOffset),
-                  sizeof(bundleEntryCodeObjectOffset));
+                sizeof(bundleEntryCodeObjectOffset));
 
     uint64_t size;
     fatbin.read(reinterpret_cast<char *>(&size), sizeof(size));

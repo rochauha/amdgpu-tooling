@@ -11,8 +11,7 @@ static void showHelp(const char *toolName) {
   std::cout << toolName << " <og-bin> <newbin>\n\n";
 }
 
-static void dumpSection(const ELFIO::section *section,
-                        bool printContents = true) {
+static void dumpSection(const ELFIO::section *section, bool printContents = true) {
   assert(section && "section must be non-null");
 
   std::cout << "section : " << section->get_name() << ", ";
@@ -33,8 +32,7 @@ static void dumpSection(const ELFIO::section *section,
   std::cout << std::dec << '\n';
 }
 
-ELFIO::section *getSection(const std::string &sectionName,
-                           const ELFIO::elfio &file) {
+ELFIO::section *getSection(const std::string &sectionName, const ELFIO::elfio &file) {
   for (int i = 0; i < file.sections.size(); ++i) {
     if (file.sections[i]->get_name() == sectionName)
       return file.sections[i];
@@ -42,9 +40,7 @@ ELFIO::section *getSection(const std::string &sectionName,
   return nullptr;
 }
 
-ELFIO::section *getNoteSection(const ELFIO::elfio &file) {
-  return getSection(".note", file);
-}
+ELFIO::section *getNoteSection(const ELFIO::elfio &file) { return getSection(".note", file); }
 
 ELFIO::segment *getNoteSegment(const ELFIO::elfio &file) {
   for (int i = 0; i < file.segments.size(); ++i) {

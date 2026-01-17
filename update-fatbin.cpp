@@ -18,13 +18,14 @@ struct GpuBinInfo {
 };
 
 static void showHelp(const std::string &toolName) {
-  std::cerr << "Usage : " << toolName << " <arch-name> " << " <path-to-elf> " << "<path-to-fatbin>" << std::endl;
+  std::cerr << "Usage : " << toolName << " <arch-name> "
+            << " <path-to-elf> "
+            << "<path-to-fatbin>" << std::endl;
   std::cerr << "supported architectures : gfx900, gfx906, gfx908, gfx90a, gfx940" << std::endl;
   std::cerr << "This tool create a fat binary containing an instrumented GPU binary" << std::endl;
 }
 
-static void getgpuBinInfos(const std::string &fatbinPath,
-                    std::vector<GpuBinInfo> &infos) {
+static void getgpuBinInfos(const std::string &fatbinPath, std::vector<GpuBinInfo> &infos) {
   std::ifstream fatbin(fatbinPath, std::ios::binary);
   if (!fatbin) {
     std::cerr << "error : can't open " << fatbinPath << std::endl;
@@ -42,7 +43,8 @@ static void getgpuBinInfos(const std::string &fatbinPath,
 
   while (numBundleEntries) {
     uint64_t bundleEntryCodeObjectOffset; // offset from begining of the fatbin
-    fatbin.read(reinterpret_cast<char *>(&bundleEntryCodeObjectOffset), sizeof(bundleEntryCodeObjectOffset));
+    fatbin.read(reinterpret_cast<char *>(&bundleEntryCodeObjectOffset),
+                sizeof(bundleEntryCodeObjectOffset));
 
     uint64_t size;
     fatbin.read(reinterpret_cast<char *>(&size), sizeof(size));
@@ -50,7 +52,7 @@ static void getgpuBinInfos(const std::string &fatbinPath,
     uint64_t idLength;
     fatbin.read(reinterpret_cast<char *>(&idLength), sizeof(idLength));
 
-    char id[idLength+1];
+    char id[idLength + 1];
     fatbin.read(id, idLength);
     id[idLength] = 0; // Make id null-terminated
 
@@ -175,8 +177,6 @@ int main(int argc, char *argv[]) {
     newFatbin.write(info.id.c_str(), length);
   }
 
-
-
   // Now we write the GPU objects
   // 1. For each object upto archIndex, write padding, and copy contents from fatbin to newFatbin.
   //    Also assert that the offsets match what we computed.
@@ -207,7 +207,8 @@ int main(int argc, char *argv[]) {
     offset = static_cast<int>(pos - std::streampos(0));
 
     // std::cout << offset << ' ' << gpuBinInfos[i].offset << '\n';
-    assert(offset == newBinInfos[i].offset && "Offset while writing ELF in new fatbin must match what we computed");
+    assert(offset == newBinInfos[i].offset &&
+           "Offset while writing ELF in new fatbin must match what we computed");
     newFatbin.write(buffer, gpuBinInfos[i].size);
   }
 
@@ -244,7 +245,8 @@ int main(int argc, char *argv[]) {
     offset = static_cast<int>(pos - std::streampos(0));
 
     // std::cout << offset << ' ' << gpuBinInfos[i].offset << ' ' << newBinInfos[i].offset << '\n';
-    assert(offset == newBinInfos[i].offset && "Offset while writing ELF in new fatbin must match what we computed");
+    assert(offset == newBinInfos[i].offset &&
+           "Offset while writing ELF in new fatbin must match what we computed");
     newFatbin.write(buffer, gpuBinInfos[i].size);
   }
 
