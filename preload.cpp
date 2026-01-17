@@ -33,6 +33,11 @@ std::unordered_map<std::string, int> &getKernargSizeMap() {
   return instance;
 }
 
+std::unordered_map<std::string, int> &getFirstHiddenArgIndexMap() {
+  static std::unordered_map<std::string, int> instance;
+  return instance;
+}
+
 std::vector<InstrumentationVarTableEntry> &getInstrumentationVarTableEntries() {
   static std::vector<InstrumentationVarTableEntry> instance;
   return instance;
@@ -70,14 +75,17 @@ void readInstrumentedVarTable(const std::string &filePath) {
   tableFile.close();
 }
 
-// This is used to retrieve the map :
+// This is used to retrieve the maps:
 //   kernelName -> kernargBufferSize
+//   kernelName -> firstHiddenArgIndex
 //
 // We extend the kernel signature to take an additional argument, which is the memory holding instrumentation variables.
 // The map will be used to update the kernarg signature with a bigger kernarg buffer size, to accomodate for the additional argument.
-void readKernargSizeMap(const std::string &filePath) {
-  auto &theMap = getKernargSizeMap();
-  std::cerr << "readKernargSizeMap : reading " << filePath << "\n";
+void readPreloadInfo(const std::string &filePath) {
+  auto &kernargSizeMap = getKernargSizeMap();
+  auto &firstHiddenArgIndexMap = getFirstHiddenArgIndexMap();
+
+  std::cerr << "readPreloadMaps : reading " << filePath << "\n";
   std::ifstream mapFile(filePath);
   std::string line;
 
@@ -86,19 +94,24 @@ void readKernargSizeMap(const std::string &filePath) {
   std::vector<std::string> words;
 
 
-  std::cerr << "theMap size : " << theMap.size() << '\n';
-  for(auto it : theMap) {
+  std::cerr << " size : " << kernargSizeMap.size() << '\n';
+  for(auto it : kernargSizeMap) {
     std::cerr << it.first << ' ' << it.second << '\n';
   }
 
   while (std::getline(mapFile, line)) {
     getWords(line, words);
     std::cerr << words.size() << '\n';
-    assert(words.size() == 2); // (<kernel name> <kernarg size>)
+    assert(words.size() == 3); // (<kernel name> <kernarg size>)
 
     std::string kernelName = words[0];
+
     int kernargSize = std::stoi(words[1]);
-    theMap[kernelName] = kernargSize;
+    kernargSizeMap[kernelName] = kernargSize;
+
+    int firstHiddenArgIndex = std::stoi(words[2]);
+    firstHiddenArgIndexMap[kernelName] = firstHiddenArgIndex;
+
     words.clear();
   }
   mapFile.close();
@@ -130,8 +143,7 @@ extern "C" void __hipRegisterFunction(
     uint3*       bid,
     dim3*        blockDim,
     dim3*        gridDim,
-    int*         wSize){
-  // fprintf(fdebug,"modules = %p, hostFunciton = %p, devceFunciton = %s, deviceName = %s\n",modules,hostFunction, deviceFunction, deviceName);
+    int*         wSize) {
 
   if(realRegisterFunction == 0){
     realRegisterFunction = (registerFunc_t) dlsym(RTLD_NEXT,"__hipRegisterFunction");
@@ -152,6 +164,11 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
                                       size_t sharedMemBytes,
                                       hipStream_t stream) {
 
+  if (realLaunch == 0) {
+    realLaunch = (launch_t)dlsym(RTLD_NEXT, "hipLaunchKernel");
+  }
+  assert(realLaunch != 0);
+
   auto &kernargSizeMap = getKernargSizeMap();
   auto &instrumentationVarTableEntries = getInstrumentationVarTableEntries();
 
@@ -163,34 +180,25 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   }
   std::string kernelName = iter->second;
 
-  // Step 1. Check whether this is an instrumented kernel, i.e it should be in kernargSizeMapPath
+  // Step 1. Check whether this is an instrumented kernel, i.e it should be in kernargSizeMapPath.
+  // If not instrumented, just launch it.
   auto it = kernargSizeMap.find(kernelName);
+  int kernargSize = it->second;
   if (it == kernargSizeMap.end()) {
     // do regular launch
-    std::cerr << "kernel not in kernargsizemap!\n";
-    exit(1);
+    std::cerr << kernelName << " is not instrumented. Doing regular launch\n";
+    realLaunch(hostFunction, gridDim, blockDim, args, sharedMemBytes, stream);
     return hipSuccess;
   }
 
-  int kernargSize = it->second;
-
-  if (realLaunch == 0) {
-    realLaunch = (launch_t)dlsym(RTLD_NEXT, "hipLaunchKernel");
-  }
-
-  assert(realLaunch != 0);
-
   // Step 2. Get size of instrumentation memory
+  // TODO: Use size
   assert(!instrumentationVarTableEntries.empty());
   InstrumentationVarTableEntry lastEntry = *(instrumentationVarTableEntries.end() - 1);
   size_t allocSize = lastEntry.offset + 4;
   unsigned *instrumentationDataHost = (unsigned *)calloc(1, allocSize);
 
   std::cerr << '\n';
-  std::cerr << "variables on host : " << '\n';
-  for (auto entry : instrumentationVarTableEntries) {
-    std::cerr << entry.name << " = " << instrumentationDataHost[entry.offset / 4] << '\n';
-  }
 
   unsigned *instrumentationDataDevice;
 
@@ -202,28 +210,26 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   assert(hip_ret == hipSuccess);
 
-  int new_kernarg_vec_size = kernargSize + 8;
-  void **newArgs = (void **)malloc(new_kernarg_vec_size);
+  int newKernargSizeMap = kernargSize + sizeof(void *);
+  void **newArgs = (void **)malloc(newKernargSizeMap);
 
   memcpy(newArgs, args, kernargSize);
-  // std::cerr << std::dec << "copied oldArgs to newArgs\n";
 
-  // Get rid of this 40! -- need to read metadata, or get some information somehow.
-  newArgs[40/8] = (void *)(&instrumentationDataDevice);
+  int newArgIndex = getFirstHiddenArgIndexMap()[kernelName];
+  newArgs[newArgIndex] = (void *)(&instrumentationDataDevice);
+
+  std::cerr << "Launching instrumented kernel : " << kernelName << '\n';
+
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
-  hipDeviceSynchronize();
-
-  std::cerr << "real launch done\n";
-
   hipStreamSynchronize(stream);
+
+  std::cerr << "Kernel execution complete. Copying instrumentation variables to host...\n";
 
   hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ allocSize,
             hipMemcpyDeviceToHost);
 
-  std::cerr << "copied data back\n";
-
-  std::cerr << '\n';
-  std::cerr << "counters on host : \n";
+  std::cerr << "Done.\n";
+  std::cerr << "Instrumentation variable values: \n";
   for (auto entry : instrumentationVarTableEntries) {
     std::cerr << entry.name << " = " << instrumentationDataHost[entry.offset / 4] << '\n';
   }
@@ -240,7 +246,7 @@ __attribute__((constructor)) void setup(void) {
     exit(1);
   }
 
-  readKernargSizeMap(kernargSizeMapPath);
+  readPreloadInfo(kernargSizeMapPath);
 
   const char *tableFilePath = getenv(instrumentationVariableTableEnv);
   if (!tableFilePath) {
