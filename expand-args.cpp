@@ -16,6 +16,7 @@ static bool startsWith(const std::string &prefix, const std::string &str) {
 struct KernelInfo {
   std::string name;
   unsigned kernargBufferSize;
+  unsigned firstHiddenArgIndex;
 };
 
 // Create a new argument, which is pointer to the dyninst's memory buffer for
@@ -34,7 +35,7 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument,
 
 void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
                            std::vector<msgpack::object> &newArgumentListMap,
-                           unsigned kernargBufferSize, msgpack::zone &z) {
+                           unsigned kernargBufferSize, msgpack::zone &z, KernelInfo& kernelInfo) {
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
@@ -50,6 +51,7 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
 
   // Now we are at the first hidden arg.
   assert(i < ogArgumentListMap.size() && startsWith("hidden", valueKind));
+  kernelInfo.firstHiddenArgIndex = i;
 
   std::map<std::string, msgpack::object> newArg;
   createNewArgument(newArg, kernargBufferSize, z);
@@ -131,7 +133,7 @@ void expand_args(const std::string &fileName,
     kernargListMap[".args"].convert(argumentListMap);
     std::vector<msgpack::object> newArgumentListMap;
     createNewArgumentList(argumentListMap, newArgumentListMap,
-                          iter->kernargBufferSize, z);
+                          iter->kernargBufferSize, z, *iter);
     kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
     uint32_t oldKernargSize = 0;
@@ -198,6 +200,18 @@ void readInstrumentedKernelInfos(
   file.close();
 }
 
+void writeUpdatedKernelInfos(
+    const std::string &filePath,
+    std::vector<KernelInfo> &instrumentedKernelInfos) {
+  std::ofstream file(filePath);
+  assert(file.is_open());
+
+  for (auto const kernelInfo : instrumentedKernelInfos) {
+    file << kernelInfo.name << ' ' << kernelInfo.kernargBufferSize << ' ' << kernelInfo.firstHiddenArgIndex << '\n';
+  }
+  file.close();
+}
+
 int main(int argc, char *argv[]) {
   if (argc != 3) {
     printf("usage expand_args <.names file> <.note file>\n");
@@ -206,5 +220,7 @@ int main(int argc, char *argv[]) {
   std::vector<KernelInfo> instrumentedKernelInfos;
   readInstrumentedKernelInfos(argv[1], instrumentedKernelInfos);
   expand_args(argv[2], instrumentedKernelInfos);
+  std::string outputFileName = std::string(argv[1]) + ".preload";
+  writeUpdatedKernelInfos(outputFileName, instrumentedKernelInfos);
   return 0;
 }
