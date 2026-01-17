@@ -2,67 +2,24 @@ cmake_minimum_required(VERSION 3.20)
 
 project(amdgpu-tooling LANGUAGES CXX)
 
-set(CMAKE_MODULE_PATH
-  "${Dyninst_DIR}"
-  "${Dyninst_DIR}/Modules"
-  ${CMAKE_MODULE_PATH}
-)
+add_executable(update-kd update-kd.cpp KernelDescriptor.cpp)
 
-# Import the Dyninst components
-find_package(Dyninst REQUIRED COMPONENTS symtabAPI dynElf)
-# Read the cache generated from building Dyninst
-load_cache(${Dyninst_DIR}
-  # READ_WITH_PREFIX DYNINST_
-  Boost_LIBRARIES
-  Boost_INCLUDE_DIRS
-  Boost_LIBRARY_DIRS
-  Boost_DEFINES
-  TBB_INCLUDE_DIRS
-)
-
-add_executable(update-kd
-               update-kd.cpp
-               KernelDescriptor.cpp)
-
-target_include_directories(update-kd PRIVATE
-  ${DYNINST_INCLUDE_DIR}
-  ${DYNINST_Boost_INCLUDE_DIRS}
-  ${DYNINST_TBB_INCLUDE_DIRS}
-)
-
-target_compile_definitions(update-kd PRIVATE ${DYNINST_Boost_DEFINITIONS})
-target_link_directories(update-kd PRIVATE ${DYNINST_Boost_LIBRARY_DIRS})
-
-target_link_libraries(update-kd PRIVATE
-  Dyninst::symtabAPI
-  ${DYNINST_Boost_LIBRARIES}
-)
-
-add_executable(expand-args
-               expand-args.cpp)
-
-target_include_directories(expand-args PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include
-)
+add_executable(expand-args expand-args.cpp)
+target_include_directories(
+  expand-args PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include)
 
 add_executable(update-note-phdr update-note-phdr.cpp)
-
-target_include_directories(update-note-phdr PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
-)
+target_include_directories(
+  update-note-phdr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11)
 
 add_executable(extract-fatbin extract-fatbin.cpp)
-
-target_include_directories(extract-fatbin PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
-)
+target_include_directories(
+  extract-fatbin PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11)
 
 add_executable(extract-gpubin extract-gpubin.cpp)
 
 add_executable(update-fatbin update-fatbin.cpp)
 
 add_executable(update-exec update-exec.cpp)
-
-target_include_directories(update-exec PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11
-)
+target_include_directories(
+  update-exec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/elfio-3.11)

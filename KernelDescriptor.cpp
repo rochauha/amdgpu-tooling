@@ -1,7 +1,5 @@
 #include "KernelDescriptor.h"
 
-#include "Elf_X.h"
-
 #include "third-party/AMDGPUFlags.h"
 
 #include <cassert>
@@ -10,21 +8,6 @@
 
 using namespace llvm;
 using namespace amdhsa;
-using namespace Dyninst;
-using namespace SymtabAPI;
-
-void KernelDescriptor::readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
-                                size_t fromIndex, size_t numBytes,
-                                uint8_t *data) {
-  assert(rawBytes && "rawBytes must be non-null");
-  assert(data && "data must be non-null");
-  assert(fromIndex + numBytes <= rawBytesLength);
-
-  for (size_t i = 0; i < numBytes; ++i) {
-    size_t idx = fromIndex + i;
-    data[i] = rawBytes[idx];
-  }
-}
 
 bool KernelDescriptor::isGfx6() const {
   return (amdgpuMach >= EF_AMDGPU_MACH_AMDGCN_GFX600 &&
@@ -79,35 +62,35 @@ KernelDescriptor::KernelDescriptor(uint8_t *kdBytes, size_t kdSize) {
   kdRepr = *(reinterpret_cast<kernel_descriptor_t *>(kdBytes));
 }
 
-KernelDescriptor::KernelDescriptor(const Symbol *symbol, const Elf_X *elfHeader)
-    : elfHdr(elfHeader) {
-  assert(symbol && "symbol must be non-null");
-  assert(elfHeader && "elfHeader must be non-null");
-  assert(elfHeader->e_machine() == EM_AMDGPU && "must be dealing with AMDGPU");
-
-  name = symbol->getMangledName();
-  const size_t kdSize = 64;
-
-  // This region corresponds to the section
-  const Region *region = symbol->getRegion();
-  const size_t regionSize = region->getDiskSize();
-
-  assert(sizeof(kernel_descriptor_t) == kdSize);
-  assert(regionSize >= kdSize);
-
-  amdgpuMach = elfHdr->e_flags() & EF_AMDGPU_MACH; // llvm::EF_AMDGPU_MACH
-
-  const Offset regionStartOffset = region->getDiskOffset();
-  const size_t kdBeginIdx = symbol->getOffset() - regionStartOffset;
-  uint8_t *kdBytes =
-      (uint8_t *)region->getPtrToRawData() + kdBeginIdx;
-
-  // We read from kdBytes to kdPtr as per the kernel descriptor format.
-  kdRepr = *(reinterpret_cast<kernel_descriptor_t *>(kdBytes));
-
-  // FIXME: this assertion fails sometimes
-  // assert(verify() && "Kernel descriptor must be well formed");
-}
+// KernelDescriptor::KernelDescriptor(const Symbol *symbol, const Elf_X *elfHeader)
+//     : elfHdr(elfHeader) {
+//   assert(symbol && "symbol must be non-null");
+//   assert(elfHeader && "elfHeader must be non-null");
+//   assert(elfHeader->e_machine() == EM_AMDGPU && "must be dealing with AMDGPU");
+//
+//   name = symbol->getMangledName();
+//   const size_t kdSize = 64;
+//
+//   // This region corresponds to the section
+//   const Region *region = symbol->getRegion();
+//   const size_t regionSize = region->getDiskSize();
+//
+//   assert(sizeof(kernel_descriptor_t) == kdSize);
+//   assert(regionSize >= kdSize);
+//
+//   amdgpuMach = elfHdr->e_flags() & EF_AMDGPU_MACH; // llvm::EF_AMDGPU_MACH
+//
+//   const Offset regionStartOffset = region->getDiskOffset();
+//   const size_t kdBeginIdx = symbol->getOffset() - regionStartOffset;
+//   uint8_t *kdBytes =
+//       (uint8_t *)region->getPtrToRawData() + kdBeginIdx;
+//
+//   // We read from kdBytes to kdPtr as per the kernel descriptor format.
+//   kdRepr = *(reinterpret_cast<kernel_descriptor_t *>(kdBytes));
+//
+//   // FIXME: this assertion fails sometimes
+//   // assert(verify() && "Kernel descriptor must be well formed");
+// }
 
 bool KernelDescriptor::verify() const {
   for (int idx = 0; idx < 4; ++idx) {

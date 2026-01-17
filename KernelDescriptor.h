@@ -3,16 +3,10 @@
 
 #include "third-party/AMDHSAKernelDescriptor.h"
 
-#include "Elf_X.h"
-#include "Symtab.h"
-
 #include <ostream>
 
 class KernelDescriptor {
 public:
-  KernelDescriptor(const Dyninst::SymtabAPI::Symbol *symbol,
-                   const Dyninst::Elf_X *elfHeader);
-
   KernelDescriptor(uint8_t *kdBytes, size_t kdSize);
 
   uint32_t getGroupSegmentFixedSize() const;
@@ -238,7 +232,6 @@ public:
   bool getKernelCodeProperty_EnableWavefrontSize32() const;
   void setKernelCodeProperty_EnableWavefrontSize32(bool value);
 
-  // TODO : the llvm definition doesn't have this in mono repo yet
   bool getKernelCodeProperty_UsesDynamicStack() const;
   void setKernelCodeProperty_UsesDynamicStack(bool value);
 
@@ -251,15 +244,7 @@ public:
 
   const std::string &getName() const { return name; }
 
-  // THIS IS ONLY TO HELP PATCHING THE ORIGINAL KD AFTER UPDATING IT.
-  // DON'T USE THIS FOR MODIFYING KDs.
-  void *getRawPtr() { return (void *)&kdRepr; }
-
 private:
-  // read numBytes bytes starting at fromIndex in rawBytes into data
-  void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
-                size_t fromIndex, size_t numBytes, uint8_t *data);
-
   bool verifyCOMPUTE_PGM_RSRC3() const;
   void dumpCOMPUTE_PGM_RSRC3(std::ostream &os) const;
   void dumpCOMPUTE_PGM_RSRC3_Gfx90aOr940(std::ostream &os) const;
@@ -290,8 +275,6 @@ private:
 
   // canonical kernel descriptor struct
   llvm::amdhsa::kernel_descriptor_t kdRepr;
-
-  const Dyninst::Elf_X *elfHdr;
 
   unsigned amdgpuMach;
 };
