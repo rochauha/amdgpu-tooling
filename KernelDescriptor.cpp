@@ -75,67 +75,8 @@ bool KernelDescriptor::isGfx11() const {
 }
 
 KernelDescriptor::KernelDescriptor(uint8_t *kdBytes, size_t kdSize) {
-  uint8_t *kdPtr = (uint8_t *)&kdRepr;
-
-  size_t idx = 0;
-  while (idx != kdSize) {
-    switch (idx) {
-    case amdhsa::GROUP_SEGMENT_FIXED_SIZE_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::PRIVATE_SEGMENT_FIXED_SIZE_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::KERNARG_SIZE_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::RESERVED0_OFFSET:
-      readToKd(kdBytes, kdSize, idx, 4 * sizeof(int8_t), kdPtr + idx);
-      idx += 4 * sizeof(uint8_t);
-      break;
-
-    case amdhsa::KERNEL_CODE_ENTRY_BYTE_OFFSET_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint64_t), kdPtr + idx);
-      idx += sizeof(uint64_t);
-      break;
-
-    case amdhsa::RESERVED1_OFFSET:
-      readToKd(kdBytes, kdSize, idx, 20 * sizeof(uint8_t), kdPtr + idx);
-      idx += 20 * sizeof(uint8_t);
-      break;
-
-    case amdhsa::COMPUTE_PGM_RSRC3_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::COMPUTE_PGM_RSRC1_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::COMPUTE_PGM_RSRC2_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::KERNEL_CODE_PROPERTIES_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint16_t), kdPtr + idx);
-      idx += sizeof(uint16_t);
-      break;
-
-    case amdhsa::RESERVED2_OFFSET:
-      readToKd(kdBytes, kdSize, idx, 6 * sizeof(uint8_t), kdPtr + idx);
-      idx += 6 * sizeof(uint8_t);
-      break;
-    }
-  }
+  assert(kdSize == sizeof(kdRepr));
+  kdRepr = *(reinterpret_cast<kernel_descriptor_t *>(kdBytes));
 }
 
 KernelDescriptor::KernelDescriptor(const Symbol *symbol, const Elf_X *elfHeader)
@@ -158,71 +99,11 @@ KernelDescriptor::KernelDescriptor(const Symbol *symbol, const Elf_X *elfHeader)
 
   const Offset regionStartOffset = region->getDiskOffset();
   const size_t kdBeginIdx = symbol->getOffset() - regionStartOffset;
-  const uint8_t *kdBytes =
-      (const uint8_t *)region->getPtrToRawData() + kdBeginIdx;
+  uint8_t *kdBytes =
+      (uint8_t *)region->getPtrToRawData() + kdBeginIdx;
 
   // We read from kdBytes to kdPtr as per the kernel descriptor format.
-  uint8_t *kdPtr = (uint8_t *)&kdRepr;
-
-  size_t idx = 0;
-  while (idx != kdSize) {
-    switch (idx) {
-    case amdhsa::GROUP_SEGMENT_FIXED_SIZE_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::PRIVATE_SEGMENT_FIXED_SIZE_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::KERNARG_SIZE_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::RESERVED0_OFFSET:
-      readToKd(kdBytes, kdSize, idx, 4 * sizeof(int8_t), kdPtr + idx);
-      idx += 4 * sizeof(uint8_t);
-      break;
-
-    case amdhsa::KERNEL_CODE_ENTRY_BYTE_OFFSET_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint64_t), kdPtr + idx);
-      idx += sizeof(uint64_t);
-      break;
-
-    case amdhsa::RESERVED1_OFFSET:
-      readToKd(kdBytes, kdSize, idx, 20 * sizeof(uint8_t), kdPtr + idx);
-      idx += 20 * sizeof(uint8_t);
-      break;
-
-    case amdhsa::COMPUTE_PGM_RSRC3_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::COMPUTE_PGM_RSRC1_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::COMPUTE_PGM_RSRC2_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint32_t), kdPtr + idx);
-      idx += sizeof(uint32_t);
-      break;
-
-    case amdhsa::KERNEL_CODE_PROPERTIES_OFFSET:
-      readToKd(kdBytes, kdSize, idx, sizeof(uint16_t), kdPtr + idx);
-      idx += sizeof(uint16_t);
-      break;
-
-    case amdhsa::RESERVED2_OFFSET:
-      readToKd(kdBytes, kdSize, idx, 6 * sizeof(uint8_t), kdPtr + idx);
-      idx += 6 * sizeof(uint8_t);
-      break;
-    }
-  }
+  kdRepr = *(reinterpret_cast<kernel_descriptor_t *>(kdBytes));
 
   // FIXME: this assertion fails sometimes
   // assert(verify() && "Kernel descriptor must be well formed");
