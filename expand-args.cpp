@@ -15,7 +15,7 @@ static bool startsWith(const std::string &prefix, const std::string &str) {
 
 struct KernelInfo {
   std::string name;
-  unsigned kernargBufferSize;
+  unsigned newKernargBufferSize;
   unsigned firstHiddenArgIndex;
 };
 
@@ -35,7 +35,7 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int 
 
 void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
                            std::vector<msgpack::object> &newArgumentListMap,
-                           unsigned kernargBufferSize, msgpack::zone &z, KernelInfo &kernelInfo) {
+                           unsigned newKernargBufferSize, msgpack::zone &z, KernelInfo &kernelInfo) {
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
@@ -54,7 +54,7 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   kernelInfo.firstHiddenArgIndex = i;
 
   std::map<std::string, msgpack::object> newArg;
-  createNewArgument(newArg, kernargBufferSize, z);
+  createNewArgument(newArg, newKernargBufferSize, z);
   newArgumentListMap.push_back(msgpack::object(newArg, z));
   std::cerr << "added newArg to new list\n";
 
@@ -130,14 +130,17 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
 
     kernargListMap[".args"].convert(argumentListMap);
     std::vector<msgpack::object> newArgumentListMap;
-    createNewArgumentList(argumentListMap, newArgumentListMap, iter->kernargBufferSize, z, *iter);
-    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
-
     uint32_t oldKernargSize = 0;
     kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
     assert(oldKernargSize % 8 == 0);
+    // We append the new argument at the end, so our offset is oldKernargSize
+    createNewArgumentList(argumentListMap, newArgumentListMap, oldKernargSize, z, *iter);
+    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
-    uint32_t newKernargSize = oldKernargSize + 8;
+
+    // Dyninst already updated the kernarg size in the kernel descriptor.
+    // We picked that up when parsing kernelInfos
+    uint32_t newKernargSize = iter->newKernargBufferSize;
 
     kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
@@ -189,7 +192,7 @@ void readInstrumentedKernelInfos(const std::string &filePath,
   assert(file.is_open());
 
   KernelInfo kernelInfo;
-  while (file >> kernelInfo.name >> kernelInfo.kernargBufferSize) {
+  while (file >> kernelInfo.name >> kernelInfo.newKernargBufferSize) {
     instrumentedKernelInfos.push_back(kernelInfo);
   }
 
@@ -202,7 +205,7 @@ void writeUpdatedKernelInfos(const std::string &filePath,
   assert(file.is_open());
 
   for (auto const kernelInfo : instrumentedKernelInfos) {
-    file << kernelInfo.name << ' ' << kernelInfo.kernargBufferSize << ' '
+    file << kernelInfo.name << ' ' << kernelInfo.newKernargBufferSize << ' '
          << kernelInfo.firstHiddenArgIndex << '\n';
   }
   file.close();
