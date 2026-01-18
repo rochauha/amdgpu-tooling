@@ -15,7 +15,7 @@ FATBIN_UPDATED=$FATBIN.updated
 
 GPUBIN=$FATBIN.gfx908
 GPUBIN_INSTR=$GPUBIN-instr
-GPUBIN_UPDATED=$GPUBIN_INSTR.updated
+GPUBIN_UPDATED=$GPUBIN_INSTR
 GPUBIN_UPDATED_NOTE=$GPUBIN_INSTR.updated-note
 GPUBIN_FINAL=$GPUBIN.final
 
@@ -38,7 +38,7 @@ $MUTATOR  $GPUBIN
 
 # 4. Update kernel descriptors for instrumented kernels
 # This will produce $GPUBIN_UPDATED
-update-kd $NAMES_FILE $GPUBIN_INSTR
+# update-kd $NAMES_FILE $GPUBIN_INSTR
 
 # 5. Modify the note metadata
 #
@@ -52,7 +52,7 @@ llvm-objcopy --dump-section=.note=$NOTE_IN $GPUBIN
 expand-args $NAMES_FILE $NOTE_IN
 
 # 5.3 Copy the updated binary, remove the note section
-cp $GPUBIN_UPDATED $GPUBIN_UPDATED_NOTE
+cp $GPUBIN_INSTR $GPUBIN_UPDATED_NOTE
 llvm-objcopy --remove-section=.note $GPUBIN_UPDATED_NOTE
 
 # 5.4 Add the expanded note section
