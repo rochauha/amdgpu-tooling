@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.20)
 
 project(amdgpu-tooling LANGUAGES CXX)
 
-add_executable(update-kd update-kd.cpp KernelDescriptor.cpp)
-
 add_executable(expand-args expand-args.cpp)
 target_include_directories(
   expand-args PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include)
