@@ -5,6 +5,7 @@
 #include <fstream>
 #include <cassert>
 #include <string>
+#include <sstream>
 #include <cstring>
 #include <vector>
 #include <unordered_map>
