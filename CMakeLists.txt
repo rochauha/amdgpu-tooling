@@ -1,5 +1,19 @@
 cmake_minimum_required(VERSION 3.20)
 
+set(ROCM_PATH
+    ""
+    CACHE PATH "Path to ROCm install directory")
+
+if("${ROCM_PATH}" STREQUAL "")
+  message(
+    FATAL_ERROR
+      "\n ROCM_PATH not set"
+      "Please provide it using: cmake -DROCM_PATH=/path/to/rocm/install \n")
+endif()
+
+set(CMAKE_C_COMPILER "${ROCM_PATH}/bin/amdclang")
+set(CMAKE_CXX_COMPILER "${ROCM_PATH}/bin/amdclang++")
+
 project(amdgpu-tooling LANGUAGES CXX)
 
 add_executable(expand-args expand-args.cpp)
