@@ -54,3 +54,20 @@ add_custom_command(
   VERBATIM)
 
 add_custom_target(PreloadFile ALL DEPENDS "${PRELOAD_SO}")
+
+# SPECIAL CASE FOR instr-driver
+
+# Paths for instr-driver
+set(DRIVER_SCRIPT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/instr-driver")
+set(DRIVER_SCRIPT_DEST "${CMAKE_CURRENT_BINARY_DIR}/instr-driver")
+
+# Command to copy instr-driver
+add_custom_command(
+  OUTPUT "${DRIVER_SCRIPT_DEST}"
+  COMMAND ${CMAKE_COMMAND} -E copy "${DRIVER_SCRIPT_SRC}"
+          "${DRIVER_SCRIPT_DEST}"
+  DEPENDS "${DRIVER_SCRIPT_SRC}"
+  COMMENT "Copying ${DRIVER_SCRIPT_SRC} to build directory"
+  VERBATIM)
+
+add_custom_target(DriverScript ALL DEPENDS "${DRIVER_SCRIPT_DEST}")
