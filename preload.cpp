@@ -103,7 +103,7 @@ void readPreloadInfo(const std::string &filePath) {
   while (std::getline(mapFile, line)) {
     getWords(line, words);
     std::cerr << words.size() << '\n';
-    assert(words.size() == 3); // (<kernel name> <kernarg size>)
+    assert(words.size() == 3); // (<kernel name> <kernarg size> <numArgs>)
 
     std::string kernelName = words[0];
 
@@ -211,8 +211,8 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   assert(hip_ret == hipSuccess);
 
-  int newKernargSizeMap = kernargSize + sizeof(void *);
-  void **newArgs = (void **)malloc(newKernargSizeMap);
+  int newKernargSize = kernargSize + sizeof(void *);
+  void **newArgs = (void **)malloc(newKernargSize);
 
   memcpy(newArgs, args, kernargSize);
 
