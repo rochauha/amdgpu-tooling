@@ -201,6 +201,17 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   std::cerr << '\n';
 
+  // kernargSize is the updated kernargSize with 2 additional pointers.
+  uint32_t sizeOfArg = 8;
+  uint32_t oldKernargSize = kernargSize - 2 * sizeOfArg;
+
+  std::cerr << "old kernarg size = " << oldKernargSize << '\n';
+  std::cerr << "new kernarg size = " << kernargSize << '\n';
+
+  void **newArgs = (void **)malloc(kernargSize);
+  memcpy(newArgs, args, oldKernargSize);
+
+  // First additional argument, dyninst instrumentation memory
   unsigned *instrumentationDataDevice;
 
   hipError_t hip_ret =
@@ -211,23 +222,37 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   assert(hip_ret == hipSuccess);
 
-  int newKernargSize = kernargSize + sizeof(void *);
-  void **newArgs = (void **)malloc(newKernargSize);
+  uint32_t dyninstMemArgIndex = getFirstHiddenArgIndexMap()[kernelName];
+  newArgs[dyninstMemArgIndex] = (void *)(&instrumentationDataDevice);
 
-  memcpy(newArgs, args, kernargSize);
+  // Second additional argument, wavesPerBlock
+  uint32_t threadsPerBlock = blockDim.x * blockDim.y * blockDim.z;
+  const uint32_t waveSize = 64;
+  uint32_t wavesPerBlock = (threadsPerBlock + waveSize - 1) / waveSize;
 
-  int newArgIndex = getFirstHiddenArgIndexMap()[kernelName];
-  newArgs[newArgIndex] = (void *)(&instrumentationDataDevice);
+  uint32_t *wavesPerBlockAddrDevice;
+
+  hip_ret = hipMalloc((void **)&wavesPerBlockAddrDevice, sizeof(uint32_t));
+  assert(hip_ret == hipSuccess);
+
+  hip_ret = hipMemcpy(&wavesPerBlock, wavesPerBlockAddrDevice, /* size = */ sizeof(uint32_t),
+                      hipMemcpyHostToDevice);
+  assert(hip_ret == hipSuccess);
+
+  const uint32_t wavesPerBlockIndex = dyninstMemArgIndex + 1;
+  newArgs[wavesPerBlockIndex] = (void *)(&wavesPerBlockAddrDevice);
 
   std::cerr << "Launching instrumented kernel : " << kernelName << '\n';
 
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
-  hipStreamSynchronize(stream);
+  hip_ret = hipStreamSynchronize(stream);
+  assert(hip_ret == hipSuccess);
 
   std::cerr << "Kernel execution complete. Copying instrumentation variables to host...\n";
 
-  hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ allocSize,
-            hipMemcpyDeviceToHost);
+  hip_ret = hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ allocSize,
+                      hipMemcpyDeviceToHost);
+  assert(hip_ret == hipSuccess);
 
   std::cerr << "Done.\n";
   std::cerr << "Instrumentation variable values: \n";
