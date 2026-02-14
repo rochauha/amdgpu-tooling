@@ -21,7 +21,7 @@ struct KernelInfo {
 
 // Create a new argument, which is pointer to the dyninst's memory buffer for
 // variables
-void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int offset,
+void createDyninstMemoryArgument(std::map<std::string, msgpack::object> &newArgument, int offset,
                        msgpack::zone &z) {
   newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
   newArgument[".address_space"] = msgpack::object(std::string("global"), z);
@@ -33,13 +33,27 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int 
   std::cerr << "created new argument with offset = " << offset << '\n';
 }
 
+// Create a new argument for the number of waves per block.
+// The preload wrapper around hipLaunchKernel will ensure that we pass #waves per block correctly.
+void createWavesPerBlockArgument(std::map<std::string, msgpack::object> &newArgument, int offset,
+                       msgpack::zone &z) {
+  newArgument[".name"] = msgpack::object(std::string("waves_per_block"), z);
+  newArgument[".address_space"] = msgpack::object(std::string("global"), z);
+  newArgument[".offset"] = msgpack::object(offset, z);
+  newArgument[".size"] = msgpack::object(8, z);
+  newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
+  newArgument[".access"] = msgpack::object(std::string("read"), z);
+
+  std::cerr << "created new argument with offset = " << offset << '\n';
+}
+
 void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
                            std::vector<msgpack::object> &newArgumentListMap,
-                           unsigned newKernargBufferSize, msgpack::zone &z, KernelInfo &kernelInfo) {
+                           unsigned oldKernargBufferSize, msgpack::zone &z, KernelInfo &kernelInfo) {
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
-  for (i; i < ogArgumentListMap.size(); ++i) {
+  for (i = 0; i < ogArgumentListMap.size(); ++i) {
     ogArgumentListMap[i].convert(arg);
     msgpack::object valueKindObject = arg[".value_kind"];
     valueKindObject.convert(valueKind);
@@ -53,10 +67,21 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   assert(i < ogArgumentListMap.size() && startsWith("hidden", valueKind));
   kernelInfo.firstHiddenArgIndex = i;
 
-  std::map<std::string, msgpack::object> newArg;
-  createNewArgument(newArg, newKernargBufferSize, z);
-  newArgumentListMap.push_back(msgpack::object(newArg, z));
-  std::cerr << "added newArg to new list\n";
+  // Add instrumentation memory as argument
+  std::map<std::string, msgpack::object> dyninstMemArg;
+  uint32_t dyninstMemArgSize = 8;
+  uint32_t dyninstMemArgOffset = oldKernargBufferSize;
+  createDyninstMemoryArgument(dyninstMemArg, dyninstMemArgOffset, z);
+  newArgumentListMap.push_back(msgpack::object(dyninstMemArg, z));
+  std::cerr << "added instrumentation memory buffer to new argument list\n";
+
+  // Add waves-per-block as argument
+  uint32_t wavesPerBlockArgOffset = oldKernargBufferSize + dyninstMemArgSize;
+  std::map<std::string, msgpack::object> wavesPerBlockArg;
+  createWavesPerBlockArgument(wavesPerBlockArg, wavesPerBlockArgOffset, z);
+  newArgumentListMap.push_back(msgpack::object(wavesPerBlockArg, z));
+  std::cerr << "added waves-per-block to new argument list\n";
+
 
   // Push other arguments
   for (i; i < ogArgumentListMap.size(); ++i) {
