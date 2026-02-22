@@ -165,6 +165,11 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
                                       size_t sharedMemBytes,
                                       hipStream_t stream) {
 
+  const uint32_t numBlocks = gridDim.x * gridDim.y * gridDim.z;
+  const uint32_t threadsPerBlock = blockDim.x * blockDim.y * blockDim.z;
+  const uint32_t waveSize = 64;
+  const uint32_t numWaves = numBlocks * ((threadsPerBlock + waveSize - 1) / waveSize);
+
   if (realLaunch == 0) {
     realLaunch = (launch_t)dlsym(RTLD_NEXT, "hipLaunchKernel");
   }
@@ -196,14 +201,18 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   // TODO: Use size
   assert(!instrumentationVarTableEntries.empty());
   InstrumentationVarTableEntry lastEntry = *(instrumentationVarTableEntries.end() - 1);
-  size_t allocSize = lastEntry.offset + 4;
+  size_t bytesPerWave = (lastEntry.offset + 4);
+  std::cerr << "bytesPerWave = " << bytesPerWave << '\n';
+  size_t allocSize = bytesPerWave * numWaves;
+  std::cerr << "numWaves = " << numWaves << '\n';
+  std::cerr << "size of instrumentation memory buffer = " << allocSize << '\n';
   unsigned *instrumentationDataHost = (unsigned *)calloc(1, allocSize);
 
   std::cerr << '\n';
 
   // kernargSize is the updated kernargSize with 2 additional pointers.
   uint32_t sizeOfArg = 8;
-  uint32_t oldKernargSize = kernargSize - 2 * sizeOfArg;
+  uint32_t oldKernargSize = kernargSize - (2 * sizeOfArg);
 
   std::cerr << "old kernarg size = " << oldKernargSize << '\n';
   std::cerr << "new kernarg size = " << kernargSize << '\n';
@@ -226,9 +235,8 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   newArgs[dyninstMemArgIndex] = (void *)(&instrumentationDataDevice);
 
   // Second additional argument, wavesPerBlock
-  uint32_t threadsPerBlock = blockDim.x * blockDim.y * blockDim.z;
-  const uint32_t waveSize = 64;
   uint32_t wavesPerBlock = (threadsPerBlock + waveSize - 1) / waveSize;
+  std::cerr << "wavesPerBlock = " << wavesPerBlock << '\n';
 
   uint32_t *wavesPerBlockAddrDevice;
 
@@ -257,7 +265,18 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   std::cerr << "Done.\n";
   std::cerr << "Instrumentation variable values: \n";
   for (auto entry : instrumentationVarTableEntries) {
-    std::cerr << entry.name << " = " << instrumentationDataHost[entry.offset / 4] << '\n';
+    uint32_t entryOffset = entry.offset;
+    for (int i = 0; i < numWaves; ++i) {
+      uint32_t waveBase = i * bytesPerWave;
+      std::cerr << "waveBase = " << waveBase << ' ';
+      uint32_t byteOffset = waveBase + entryOffset;
+
+      // instrumentation data is of type unsigned
+      std::cerr << "wave " << i << " : "
+                << "byteOffset = " << byteOffset << " "
+                << entry.name << " = " << instrumentationDataHost[byteOffset / (sizeof(unsigned))] << '\n';
+    }
+
   }
   std::cerr << '\n';
   return hipSuccess;
