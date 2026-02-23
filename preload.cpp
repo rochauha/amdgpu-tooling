@@ -268,12 +268,12 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
     uint32_t entryOffset = entry.offset;
     for (int i = 0; i < numWaves; ++i) {
       uint32_t waveBase = i * bytesPerWave;
-      std::cerr << "waveBase = " << waveBase << ' ';
       uint32_t byteOffset = waveBase + entryOffset;
 
-      // instrumentation data is of type unsigned
       std::cerr << "wave " << i << " : "
-                << "byteOffset = " << byteOffset << " "
+                << "wave data base offset = " << waveBase << ' '
+                << "byteOffset = " << byteOffset << ' '
+                // instrumentation data is of type unsigned
                 << entry.name << " = " << instrumentationDataHost[byteOffset / (sizeof(unsigned))] << '\n';
     }
 
