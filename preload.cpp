@@ -201,7 +201,10 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   // TODO: Use size
   assert(!instrumentationVarTableEntries.empty());
   InstrumentationVarTableEntry lastEntry = *(instrumentationVarTableEntries.end() - 1);
-  size_t bytesPerWave = (lastEntry.offset + 4);
+
+  size_t sizeOfInstance = sizeof(unsigned);
+  size_t sizeOfVectorElement = sizeOfInstance * waveSize;
+  size_t bytesPerWave = (lastEntry.offset + sizeOfVectorElement);
   std::cerr << "bytesPerWave = " << bytesPerWave << '\n';
   size_t allocSize = bytesPerWave * numWaves;
   std::cerr << "numWaves = " << numWaves << '\n';
@@ -268,13 +271,19 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
     uint32_t entryOffset = entry.offset;
     for (int i = 0; i < numWaves; ++i) {
       uint32_t waveBase = i * bytesPerWave;
-      uint32_t byteOffset = waveBase + entryOffset;
+      uint32_t vectorByteOffset = waveBase + entryOffset;
 
       std::cerr << "wave " << i << " : "
                 << "wave data base offset = " << waveBase << ' '
-                << "byteOffset = " << byteOffset << ' '
+                << "vector byteOffset = " << vectorByteOffset << ' '
                 // instrumentation data is of type unsigned
-                << entry.name << " = " << instrumentationDataHost[byteOffset / (sizeof(unsigned))] << '\n';
+                << entry.name << '\n';
+                for (size_t i = 0; i < waveSize; ++i) {
+                  size_t elementByteOffset = vectorByteOffset + i * sizeof(unsigned);
+                  std::cerr << "lane " << i
+                            << " element byte offset = " << elementByteOffset
+                            << " element value = " << instrumentationDataHost[elementByteOffset / (sizeof(unsigned))] << '\n';
+                }
     }
 
   }
