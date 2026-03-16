@@ -1,5 +1,6 @@
 #include "hip/hip_runtime.h"
 
+#include <chrono>
 #include <dlfcn.h>
 #include <iostream>
 #include <fstream>
@@ -221,8 +222,15 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   std::cerr << "Launching instrumented kernel : " << kernelName << '\n';
 
+  auto start = std::chrono::high_resolution_clock::now();
+
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
   hipStreamSynchronize(stream);
+
+  auto end = std::chrono::high_resolution_clock::now();
+
+  std::chrono::duration<double, std::milli> elapsed = end - start;
+  std::cout << "Runtime : " << elapsed.count() << " ms\n";
 
   std::cerr << "Kernel execution complete. Copying instrumentation variables to host...\n";
 
