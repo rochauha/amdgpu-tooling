@@ -81,8 +81,9 @@ void readInstrumentedVarTable(const std::string &filePath) {
 //   kernelName -> kernargBufferSize
 //   kernelName -> firstHiddenArgIndex
 //
-// We extend the kernel signature to take an additional argument, which is the memory holding instrumentation variables.
-// The map will be used to update the kernarg signature with a bigger kernarg buffer size, to accomodate for the additional argument.
+// We extend the kernel signature to take an additional argument, which is the memory holding
+// instrumentation variables. The map will be used to update the kernarg signature with a
+// bigger kernarg buffer size, to accomodate for the additional argument.
 void readPreloadInfo(const std::string &filePath) {
   auto &kernargSizeMap = getKernargSizeMap();
   auto &firstHiddenArgIndexMap = getFirstHiddenArgIndexMap();
@@ -147,7 +148,7 @@ extern "C" void __hipRegisterFunction(
     dim3*        gridDim,
     int*         wSize) {
 
-  if(realRegisterFunction == 0){
+  if(realRegisterFunction == 0) {
     realRegisterFunction = (registerFunc_t) dlsym(RTLD_NEXT,"__hipRegisterFunction");
     // Map address to kernel name
     addressToKernelName[hostFunction] = std::string(deviceFunction);
@@ -177,9 +178,15 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   // Step 0. Get kernel name
   auto iter = addressToKernelName.find(hostFunction);
   if (iter == addressToKernelName.end()) {
-    std::cerr << "ERROR : kernel being launched wasn't registered by hipRegisterFunction\n";
-    exit(1);
+    std::cerr << "ERROR : kernel being launched wasn't registered by hipRegisterFunction\n"
+              << "Doing regular launch...";
+
+    realLaunch(hostFunction, gridDim, blockDim, args, sharedMemBytes, stream);
+
+    // host code might unnecessarily get triggered if this isn't hipSuccess
+    return hipSuccess;
   }
+
   std::string kernelName = iter->second;
 
   // Step 1. Check whether this is an instrumented kernel, i.e it should be in kernargSizeMapPath.
@@ -187,7 +194,7 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   auto it = kernargSizeMap.find(kernelName);
   int kernargSize = it->second;
   if (it == kernargSizeMap.end()) {
-    // do regular launch
+    // Do regular launch
     std::cerr << kernelName << " is not instrumented. Doing regular launch\n";
     realLaunch(hostFunction, gridDim, blockDim, args, sharedMemBytes, stream);
     return hipSuccess;
@@ -204,8 +211,7 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   unsigned *instrumentationDataDevice;
 
-  hipError_t hip_ret =
-      hipMalloc((void **)&instrumentationDataDevice, allocSize);
+  hipError_t hip_ret = hipMalloc((void **)&instrumentationDataDevice, allocSize);
   assert(hip_ret == hipSuccess);
 
   hip_ret = hipMemset(instrumentationDataDevice, 0, allocSize);
@@ -225,7 +231,7 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   auto start = std::chrono::high_resolution_clock::now();
 
   realLaunch(hostFunction, gridDim, blockDim, newArgs, sharedMemBytes, stream);
-  hipStreamSynchronize(stream);
+  assert(hipStreamSynchronize(stream) == hipSuccess);
 
   auto end = std::chrono::high_resolution_clock::now();
 
@@ -234,8 +240,9 @@ extern "C" hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
   std::cerr << "Kernel execution complete. Copying instrumentation variables to host...\n";
 
-  hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ allocSize,
+  hip_ret = hipMemcpy(instrumentationDataHost, instrumentationDataDevice, /* size = */ allocSize,
             hipMemcpyDeviceToHost);
+  assert(hip_ret == hipSuccess);
 
   std::cerr << "Done.\n";
   std::cerr << "Instrumentation variable values: \n";
@@ -264,4 +271,3 @@ __attribute__((constructor)) void setup(void) {
   }
   readInstrumentedVarTable(tableFilePath);
 }
-
