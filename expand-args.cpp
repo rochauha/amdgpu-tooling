@@ -19,6 +19,16 @@ struct KernelInfo {
   unsigned firstHiddenArgIndex;
 };
 
+
+// This number comes from LLVM AMDGPUUsage - https://llvm.org/docs/AMDGPUUsage.html
+static const uint32_t GFX908_MAX_SGPR_COUNT = 112;
+
+// Pointers need to be 8-byte aligned
+static const uint32_t PTR_ALIGNMENT = 8;
+
+// The extra argument is a pointer of 8 bytes
+static const uint32_t DYNINST_ARG_SIZE = 8;
+
 // Create a new argument, which is pointer to the dyninst's memory buffer for
 // variables
 void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int offset,
@@ -26,7 +36,7 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int 
   newArgument[".name"] = msgpack::object(std::string("dyninst_mem"), z);
   newArgument[".address_space"] = msgpack::object(std::string("global"), z);
   newArgument[".offset"] = msgpack::object(offset, z);
-  newArgument[".size"] = msgpack::object(8, z);
+  newArgument[".size"] = msgpack::object(DYNINST_ARG_SIZE, z);
   newArgument[".value_kind"] = msgpack::object(std::string("global_buffer"), z);
   newArgument[".access"] = msgpack::object(std::string("read_write"), z);
 
@@ -93,7 +103,6 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
    * Padding until 4 byte aligned
    * Followed by msgpack data
    */
-  msgpack::object_handle oh;
   std::string name_szstr = str.substr(0, 4);
   uint32_t name_sz = *((uint32_t *)name_szstr.c_str());
   std::string noteType = str.substr(8, 4);
@@ -108,8 +117,9 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
    * Unpack until we get to .group_segment_fixed_size
    *
    */
-  oh = msgpack::unpack(str.data() + offset, str.size() - offset);
-  msgpack::object map_root = oh.get();
+  msgpack::object_handle objHandle;
+  objHandle = msgpack::unpack(str.data() + offset, str.size() - offset);
+  msgpack::object map_root = objHandle.get();
   map_root.convert(kvmap);
   kvmap["amdhsa.kernels"].convert(kernargList);
 
@@ -132,20 +142,23 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
     std::vector<msgpack::object> newArgumentListMap;
     uint32_t oldKernargSize = 0;
     kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
-    assert(oldKernargSize % 8 == 0);
-    // We append the new argument at the end, so our offset is oldKernargSize
-    createNewArgumentList(argumentListMap, newArgumentListMap, oldKernargSize, z, *iter);
-    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
+    // Rounding up to alignment requirement
+    uint32_t newArgOffset= ((oldKernargSize + PTR_ALIGNMENT - 1) / PTR_ALIGNMENT) * PTR_ALIGNMENT;
+
+    createNewArgumentList(argumentListMap, newArgumentListMap, newArgOffset, z, *iter);
+    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
 
     // Dyninst already updated the kernarg size in the kernel descriptor.
     // We picked that up when parsing kernelInfos
     uint32_t newKernargSize = iter->newKernargBufferSize;
 
+    assert(newArgOffset + DYNINST_ARG_SIZE == newKernargSize);
+
     kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
-    // We also set spr_count to 112 (max count for gfx908)
-    kernargListMap[".sgpr_count"] = msgpack::object(112, z);
+    // We also set sgpr_count to 112 (max count for gfx908)
+    kernargListMap[".sgpr_count"] = msgpack::object(GFX908_MAX_SGPR_COUNT, z);
 
     kernargList[k_list_i] = msgpack::object(kernargListMap, z);
   }
@@ -168,16 +181,17 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
   outFile.write(name.c_str(), name.size());
 
   // Padding
-  while (outOffset % 4) {
+  while (outOffset % 4 != 0) {
     outFile.put('\0');
     outOffset += 1;
   }
+
   // Write the msgpack data
   outFile << outString;
   outOffset += outString.size();
 
   // Padding
-  while (outOffset % 4) {
+  while (outOffset % 4 != 0) {
     outFile.put('\0');
     outOffset += 1;
   }
