@@ -6,6 +6,11 @@
 #include <string>
 #include <vector>
 
+
+// This tool updates metadata for instrumented kernels by:
+// 1. Adding an additional argument for Dyninst's instrumentation variables
+// 2. Maxing out SGPR allocation.
+
 static bool startsWith(const std::string &prefix, const std::string &str) {
   if (prefix.length() > str.length())
     return false;
@@ -20,13 +25,13 @@ struct KernelInfo {
 };
 
 // This number comes from LLVM AMDGPUUsage - https://llvm.org/docs/AMDGPUUsage.html
-static const uint32_t GFX908_MAX_SGPR_COUNT = 112;
+static constexpr uint32_t GFX908_MAX_SGPR_COUNT = 112;
 
 // Pointers need to be 8-byte aligned
-static const uint32_t PTR_ALIGNMENT = 8;
+static constexpr uint32_t PTR_ALIGNMENT = 8;
 
 // The extra argument for Dyninst's memory is a pointer of 8 bytes
-static const uint32_t DYNINST_ARG_SIZE = 8;
+static constexpr uint32_t DYNINST_ARG_SIZE = 8;
 
 // Create a new argument, which is pointer to the Dyninst's memory buffer for
 // variables
@@ -46,34 +51,34 @@ void createNewArgument(std::map<std::string, msgpack::object> &newArgument, int 
 // to setup the actual kernel arguments.
 // The runtime expects all regular arguments first in the signature, even if the argument comes
 // after the hidden arguments in the kernarg.
-static void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
-                           std::vector<msgpack::object> &newArgumentListMap,
+static void createNewArgumentList(std::vector<msgpack::object> &ogArgumentList,
+                           std::vector<msgpack::object> &newArgumentList,
                            unsigned newKernargBufferSize, msgpack::zone &z, KernelInfo &kernelInfo) {
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
-  for (; i < ogArgumentListMap.size(); ++i) {
-    ogArgumentListMap[i].convert(arg);
+  for (; i < ogArgumentList.size(); ++i) {
+    ogArgumentList[i].convert(arg);
     msgpack::object valueKindObject = arg[".value_kind"];
     valueKindObject.convert(valueKind);
     if (startsWith("hidden", valueKind)) {
       break;
     }
-    newArgumentListMap.push_back(ogArgumentListMap[i]);
+    newArgumentList.push_back(ogArgumentList[i]);
   }
 
   // Now we are at the first hidden arg.
-  assert(i < ogArgumentListMap.size() && startsWith("hidden", valueKind));
+  assert(i < ogArgumentList.size() && startsWith("hidden", valueKind));
   kernelInfo.firstHiddenArgIndex = i;
 
   std::map<std::string, msgpack::object> newArg;
   createNewArgument(newArg, newKernargBufferSize, z);
-  newArgumentListMap.push_back(msgpack::object(newArg, z));
+  newArgumentList.push_back(msgpack::object(newArg, z));
   std::cerr << "added newArg to new list\n";
 
   // Push other arguments
-  for (; i < ogArgumentListMap.size(); ++i) {
-    newArgumentListMap.push_back(ogArgumentListMap[i]);
+  for (; i < ogArgumentList.size(); ++i) {
+    newArgumentList.push_back(ogArgumentList[i]);
   }
 }
 
@@ -86,21 +91,24 @@ static std::string readNoteFile(const std::string &fileName) {
   return std::string(buffer.str());
 }
 
-void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumentedKernelInfos) {
-  std::string newFileName = fileName + ".expanded";
-
+void rewriteNotes(const std::string &fileName, const std::string& newFileName, std::vector<KernelInfo> &instrumentedKernelInfos) {
   // Step 1 - read .note file into buffer
   std::string noteBuffer = readNoteFile(fileName);
 
-  std::map<std::string, msgpack::object> kvmap;
-  std::vector<msgpack::object> kernargList;
-  std::map<std::string, msgpack::object> kernargListMap;
-  std::vector<msgpack::object> argumentListMap;
-  msgpack::zone z;
+  std::map<std::string, msgpack::object> metadataMap;
 
+  // Each element represents the signature for a particular kernel.
+  // Each signature is a map.
+  std::vector<msgpack::object> kernelSignatures;
+  std::map<std::string, msgpack::object> kernelSignature;
+
+  // argumentList is a vector of maps
+  std::vector<msgpack::object> argumentList;
+
+  msgpack::zone z;
   uint32_t offset = 0;
 
-  // Step 2 - parse some non-msgpack header data
+  // Step 2 - parse the ELF note header. This is not msgpack header.
   // First 4 bytes  : Size of the Name str (should be AMDGPU\0)
   // Second 4 bytes : Size of the note in msgpack format
   // Third 4 bytes  : Type of the note (should be 32)
@@ -120,17 +128,17 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
   // Unpack until we get to .group_segment_fixed_size
   msgpack::object_handle objHandle;
   objHandle = msgpack::unpack(noteBuffer.data() + offset, noteBuffer.size() - offset);
-  msgpack::object map_root = objHandle.get();
-  map_root.convert(kvmap);
-  kvmap["amdhsa.kernels"].convert(kernargList);
+  msgpack::object mapRoot = objHandle.get();
+  mapRoot.convert(metadataMap);
+  metadataMap["amdhsa.kernels"].convert(kernelSignatures);
 
   // Go over each kernel entry and modify the argument list in the metadata for the
   // instrumented ones
-  for (uint32_t i = 0; i < kernargList.size(); i++) {
-    kernargList[i].convert(kernargListMap);
+  for (uint32_t i = 0; i < kernelSignatures.size(); i++) {
+    kernelSignatures[i].convert(kernelSignature);
 
     std::string kernelName = "";
-    kernargListMap[".name"].convert(kernelName);
+    kernelSignature[".name"].convert(kernelName);
 
     auto iter = std::find_if(instrumentedKernelInfos.begin(), instrumentedKernelInfos.end(),
                              [&kernelName](const KernelInfo &KI) { return KI.name == kernelName; });
@@ -139,16 +147,16 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
       continue;
     }
 
-    kernargListMap[".args"].convert(argumentListMap);
-    std::vector<msgpack::object> newArgumentListMap;
+    kernelSignature[".args"].convert(argumentList);
+    std::vector<msgpack::object> newArgumentList;
     uint32_t oldKernargSize = 0;
-    kernargListMap[".kernarg_segment_size"].convert(oldKernargSize);
+    kernelSignature[".kernarg_segment_size"].convert(oldKernargSize);
 
     // Rounding up to alignment requirement
     uint32_t newArgOffset= ((oldKernargSize + PTR_ALIGNMENT - 1) / PTR_ALIGNMENT) * PTR_ALIGNMENT;
 
-    createNewArgumentList(argumentListMap, newArgumentListMap, newArgOffset, z, *iter);
-    kernargListMap[".args"] = msgpack::object(newArgumentListMap, z);
+    createNewArgumentList(argumentList, newArgumentList, newArgOffset, z, *iter);
+    kernelSignature[".args"] = msgpack::object(newArgumentList, z);
 
     // Dyninst already updated the kernarg size in the kernel descriptor.
     // We picked that up when parsing kernelInfos
@@ -156,17 +164,18 @@ void expand_args(const std::string &fileName, std::vector<KernelInfo> &instrumen
 
     assert(newArgOffset + DYNINST_ARG_SIZE == newKernargSize);
 
-    kernargListMap[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
+    kernelSignature[".kernarg_segment_size"] = msgpack::object(newKernargSize, z);
 
-    // We also set sgpr_count to 112 (max count for gfx908)
-    kernargListMap[".sgpr_count"] = msgpack::object(GFX908_MAX_SGPR_COUNT, z);
+    // We also max out sgpr_count
+    kernelSignature[".sgpr_count"] = msgpack::object(GFX908_MAX_SGPR_COUNT, z);
 
-    kernargList[i] = msgpack::object(kernargListMap, z);
+    kernelSignatures[i] = msgpack::object(kernelSignature, z);
   }
 
-  kvmap["amdhsa.kernels"] = msgpack::object(kernargList, z);
+  metadataMap["amdhsa.kernels"] = msgpack::object(kernelSignatures, z);
+
   msgpack::sbuffer outBuffer;
-  msgpack::pack(outBuffer, kvmap);
+  msgpack::pack(outBuffer, metadataMap);
   std::string outString = std::string(outBuffer.data(), outBuffer.size());
 
   uint32_t outOffset;
@@ -234,14 +243,16 @@ int main(int argc, char *argv[]) {
 
   std::string namesFile(argv[1]);
   std::string noteFile(argv[2]);
+  std::string updatedNoteFile(noteFile + ".expanded");
 
   std::vector<KernelInfo> instrumentedKernelInfos;
   readInstrumentedKernelInfos(namesFile, instrumentedKernelInfos);
 
-  expand_args(noteFile, instrumentedKernelInfos);
+  rewriteNotes(noteFile, updatedNoteFile, instrumentedKernelInfos);
 
-  std::string outputFileName = namesFile + ".preload";
-  writeUpdatedKernelInfos(outputFileName, instrumentedKernelInfos);
+  // The preload library will read this
+  std::string preloadNamesFile = namesFile + ".preload";
+  writeUpdatedKernelInfos(preloadNamesFile, instrumentedKernelInfos);
 
   return 0;
 }
