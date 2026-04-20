@@ -17,9 +17,9 @@ set(CMAKE_CXX_COMPILER "${ROCM_PATH}/bin/amdclang++")
 project(amdgpu-tooling LANGUAGES CXX)
 # ALL REGULAR TOOLS
 
-add_executable(expand-args expand-args.cpp)
+add_executable(update-note update-note.cpp)
 target_include_directories(
-  expand-args PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include)
+  update-note PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/msgpack/include)
 
 add_executable(update-note-phdr update-note-phdr.cpp)
 target_include_directories(

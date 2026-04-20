@@ -49,7 +49,7 @@ llvm-objcopy --dump-section=.note=$NOTE_IN $GPUBIN
 # - Expand the kernarg buffer with 1 additional argument, which the additional memory that we will allocate via the host.
 # - Increase SGPR usage to 112 (GFX908 only for now)
 # This will emit $NOTE_OUT.
-expand-args $NAMES_FILE $NOTE_IN
+update-note $NAMES_FILE $NOTE_IN
 
 # 5.3 Copy the updated binary, remove the note section
 cp $GPUBIN_INSTR $GPUBIN_UPDATED_NOTE
