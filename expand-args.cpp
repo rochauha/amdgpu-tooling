@@ -39,7 +39,7 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   std::map<std::string, msgpack::object> arg;
   std::string valueKind;
   int i = 0;
-  for (i; i < ogArgumentListMap.size(); ++i) {
+  for (; i < ogArgumentListMap.size(); ++i) {
     ogArgumentListMap[i].convert(arg);
     msgpack::object valueKindObject = arg[".value_kind"];
     valueKindObject.convert(valueKind);
@@ -59,7 +59,7 @@ void createNewArgumentList(std::vector<msgpack::object> &ogArgumentListMap,
   std::cerr << "added newArg to new list\n";
 
   // Push other arguments
-  for (i; i < ogArgumentListMap.size(); ++i) {
+  for (; i < ogArgumentListMap.size(); ++i) {
     newArgumentListMap.push_back(ogArgumentListMap[i]);
   }
 }
